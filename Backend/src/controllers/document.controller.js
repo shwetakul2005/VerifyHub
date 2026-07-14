@@ -85,11 +85,13 @@ async function getDocumentByIdController(req,res){
     });
 }
 
-async function deleteDocumentByIdController(req,res){
-    const documentId  = req.params.id;
-    const loggedInUserId  = req.user.id;
-    
-    const result = await getDocByIdService.getDocumentById(
+
+
+async function deleteDocumentController(req, res) {
+    const documentId = req.params.id;
+    const loggedInUserId = req.user.id;
+
+    const result = await deleteDocumentService.deleteDocumentById(
         documentId,
         loggedInUserId
     );
@@ -99,14 +101,17 @@ async function deleteDocumentByIdController(req,res){
             success: false,
             message: result.message
         });
-    }  
-
-    deleteDocument(result);
+    }
 
     return res.status(200).json({
         success: true,
-        message: result.message,
+        message: result.message
     });
 }
 
-module.exports = {uploadController, getDocsController,getDocumentByIdController,deleteDocumentByIdController};
+module.exports = {
+    uploadController,
+    getDocsController,
+    getDocumentByIdController,
+    deleteDocumentController
+};

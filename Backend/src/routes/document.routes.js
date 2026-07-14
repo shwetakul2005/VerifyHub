@@ -31,6 +31,6 @@ docRouter.get("/:id", authMiddleware.authUser, roleMiddleware.authRoles("user"),
  * @description allow access of the docs only to the authorized users
  * @access private
  */
-docRouter.delete("/:id", authMiddleware.authUser, roleMiddleware.authRoles("user"), docController.deleteDocumentByIdController);
+docRouter.delete("/:id", authMiddleware.authUser, roleMiddleware.authRoles("user"), docController.deleteDocumentController);
 
 module.exports = docRouter;
