@@ -33,4 +33,4 @@ async function deleteDocumentById(docId, userId) {
 }
 
 
-module.exports = {getDocumentById};
+module.exports = {deleteDocumentById};
