@@ -1,0 +1,77 @@
+Flow:
+1. Installed node packages using (npm init -y)
+2. Created a src folder containing the app.js file
+3. App.js builds the application and decides what 
+    routes, middleware exists and what the backend can
+    in general do.
+4. Then outside the src folder, we create a server.js
+    resposible to start the application. It starts 
+    accepting requests from the application.
+5. Then in the src folder, we make a new dir called 
+    config which contanis database.js
+6. This is the database server that we have created 
+    which will hold all our data models and data.
+7. For this we have to first create a project in mongodb 
+    and create a cluster for storing all of our data in it.
+8. Then the credentials of the created cluster must be 
+    stored in .env file and these credentials are then used 
+    to start and connect our db to the backend server.
+9. Now once our db and backend server are connected, 
+    we create a new dir in src folder called models where we
+    store and define different schemas required for our application
+10. After defining a basic schema, we create a routes folder
+    to declare various routes from which users can get/post/put,etc
+    requests to the server.
+11. First we define the auth router which will handle auth requests
+    like register, login, signin, signout, etc.
+12. We first create the authentication router in auth.routes.js inside 
+    the routes directory. This file contains all the routes related to 
+    authentication, such as user registration, login, logout, password 
+    reset, etc.
+13. The job of auth.routes.js is to match incoming requests based on 
+    their HTTP method (GET, POST, etc.) and URL path (/register, /login, 
+    etc.), and then call the appropriate function from auth.controller.js.
+14. For example, when a user fills out the registration form and clicks 
+    Register, the frontend sends a POST request to /api/auth/register. The 
+    server receives this request, and app.js forwards it to authRouter 
+    because the URL begins with /api/auth. The router checks whether the 
+    request matches the POST /register route. If it does, it calls the 
+    corresponding function (for example, registerUser) defined in 
+    auth.controller.js. The controller then performs the registration 
+    logic, such as validating the input, checking whether the user already 
+    exists, saving the user to the database, and sending a response back 
+    to the client.
+15. Now in the contrller, we define the logic of registering the user. 
+    This contains first checking if the username or email adress is already 
+    registered in the db. If it exists, we respond with a 400 status code 
+    and a message stating the same. 
+16. Once the username and password are found to be unique only, the password 
+    is hashed using the bcrypt library into a different format and then the 
+    username, email and the hash of the password are stored in the database. 
+17. After storing the data in the db, a jwt token is generated for the user. 
+    A jwt token requires a jwt secret which is generated from a website called
+    jwtsecrets.com, and once we obtain this secret, we store it in the .env file
+    and while creating a jwt token, the user info such as user_id, username is 
+    used along with this jwt secret.
+18. Now once the token is created and all the logic in the controller function 
+    is executed, the token is sent to the client side using "res.cookie("token", token)
+    The cookie helps the browser prove the user's identity on future requests and 
+    is stored in the user's browser.Later, whenever the user sends another request,
+    the browser automatically includes that cookie (depending on how the cookie is 
+    configured and whether the request qualifies).
+19. Similarly a login router in created in the authRouter file and a loginUserController
+    function is defined in the authController. This login controller takes in the email
+    and password via the post method and then checks for the user with the same email available. 
+    Once the user is found in the db using the finOne function, the bcrypt.compare() method is 
+    used to compare the current entered password and the hashed password stored in the db.
+    If the password is matched, the status code 200 is returned or else and 400 status code is returned
+20. The next functionality is the logout function. Similarly initially for logout, we create a route
+    in the authRouter file and then start defining the function of logoutUserController in the authController.
+21. The main logic of logging out is to remove the token from the cookies of the user and then adding that 
+    token to a blacklist database so that, that token isnt again misused. For this, again in our models dir
+    we create a new file called blacklist.model.js where we'll define the schema of this blacklist db.
+22. The blacklist schema takes in the token and also the timestamp. After defining the schema, we first add 
+    the token to the blacklist schema from the logoutUserController function and then we remove the token from the
+    cookies of the user using res.clearCookie("token").
+
+
