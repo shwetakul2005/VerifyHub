@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken')
 const authRoles = (...roles) => {
   return (req, res, next) => {
         if(!roles.includes(req.user.role)){
+            console.log(req.user.role);
             return res.status(403).json({
                 success: false,
                 message: "You aren't authorized to access this resource."

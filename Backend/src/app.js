@@ -16,4 +16,7 @@ app.use("/api/auth", authRouter);
 const docRouter = require("./routes/document.routes");
 app.use("/api/documents", docRouter);
 
+const verificationRouter = require("./routes/verification.routes");
+app .use("/api/verification", verificationRouter);
+
 module.exports = app;
