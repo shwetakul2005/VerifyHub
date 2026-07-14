@@ -41,9 +41,27 @@ const documentSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    // status:{
-    //     enum: ["uploaded", "under review", "approved", "rejected"],
-    // }
+    status: {
+    type: String,
+    enum: ["pending", "approved", "rejected"],
+    default: "pending"
+    },
+
+    verifiedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "users",
+        default: null
+    },
+
+    verifiedAt: {
+        type: Date,
+        default: null
+    },
+
+    rejectionReason: {
+        type: String,
+        default: null
+    }
 },{
     timestamps: true
 } )
