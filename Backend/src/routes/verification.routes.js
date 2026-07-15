@@ -8,10 +8,16 @@ const roleMiddleware = require("../middlewares/role.middleware")
 
 /**
  * @route GET /verification/pending
- * @description 
+ * @description get all the documents pending for verification
  * @access private
  */
 verificationRouter.get("/pending", authMiddleware.authUser, roleMiddleware.authRoles("admin", "verifier"), verificationController.pendingController);
 
+/**
+ * @route PATCH /verification/:id
+ * @description
+ * @access private
+ */
+verificationRouter.get("/:id", authMiddleware.authUser, roleMiddleware.authRoles("admin", "verifier"), verificationController.pendingController);
 
 module.exports = verificationRouter;
