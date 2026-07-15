@@ -19,4 +19,8 @@ app.use("/api/documents", docRouter);
 const verificationRouter = require("./routes/verification.routes");
 app .use("/api/verification", verificationRouter);
 
+const organizationRouter = require("./routes/organization.routes")
+app.use("/api/organizations", organizationRouter);
+
+
 module.exports = app;
