@@ -32,6 +32,9 @@ async function getWorkflowTemplates(organizationId)
 async function getWorkflowTemplateById(id)
 {
     const allWorkflows = await workflowTemplateModel.findById(id);
+    if (!allWorkflows) {
+        throw new Error("Workflow template not found.");
+    }
     return allWorkflows;
 }
 
@@ -81,3 +84,11 @@ async function deleteWorkflowTemplate(id)
     await workflow.deleteOne();
     return workflow;
 }
+
+
+module.exports = {
+                    createWorkflowTemplate, 
+                    getWorkflowTemplates, 
+                    updateWorkflowTemplate, 
+                    deleteWorkflowTemplate
+                }
