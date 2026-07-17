@@ -10,7 +10,6 @@ const organizationSchema = new mongoose.Schema({
     slug:{
         type: String,
         unique: [true, "Slug already exists."],
-        required: true,
         lowercase: true, 
         trim:true
     },

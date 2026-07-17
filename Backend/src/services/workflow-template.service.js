@@ -89,6 +89,7 @@ async function deleteWorkflowTemplate(id)
 module.exports = {
                     createWorkflowTemplate, 
                     getWorkflowTemplates, 
+                    getWorkflowTemplateById,
                     updateWorkflowTemplate, 
                     deleteWorkflowTemplate
                 }

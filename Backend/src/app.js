@@ -22,5 +22,6 @@ app .use("/api/verification", verificationRouter);
 const organizationRouter = require("./routes/organization.routes")
 app.use("/api/organizations", organizationRouter);
 
-
+const workflowTemplateRoutes = require("./routes/workflow-template.routes")
+app.use("/api/workflows", workflowTemplateRoutes);
 module.exports = app;

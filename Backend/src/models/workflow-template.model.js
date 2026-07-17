@@ -28,5 +28,5 @@ const workflowTemplateSchema = new mongoose.Schema({
     timestamps:true
 })
 
-const WorkflowTemplateSchema = mongoose.model("WorkflowTemplate", workflowTemplateSchema);
-module.exports = WorkflowTemplateSchema;
+const WorkflowTemplate = mongoose.model("WorkflowTemplate", workflowTemplateSchema);
+module.exports = WorkflowTemplate;
