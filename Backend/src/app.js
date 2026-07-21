@@ -24,4 +24,11 @@ app.use("/api/organizations", organizationRouter);
 
 const workflowTemplateRoutes = require("./routes/workflow-template.routes")
 app.use("/api/workflows", workflowTemplateRoutes);
+
+const workflowStepRoutes = require("./routes/workflow-step.routes")
+app.use("/api/workflow-step", workflowStepRoutes);
+
+const verificatnoRequestRouter = require("./routes/verification-request.routes")
+app.use("/api/verification-requests", verificatnoRequestRouter);
+
 module.exports = app;
