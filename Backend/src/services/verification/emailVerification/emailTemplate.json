@@ -1,0 +1,5 @@
+{
+    "Subject": "Verify your Email Address",
+    "Body": "Hi <username>,\n    Please verify your email by clicking the link below.\n    http://localhost:3000/api/email/verify/<token>\n    This link expires in 30 minutes.\n    Thank you."
+}
+

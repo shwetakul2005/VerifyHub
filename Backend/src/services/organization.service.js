@@ -10,12 +10,12 @@ async function createOrganization(data){
         strict: true,
         trim: true
     });
-
+    console.log(orgSlug);
     const existingOrganization = await organizationModel.findOne({slug:orgSlug});
     if(existingOrganization){
         throw new Error("Organization already exists.");
     }
-    const newOrg = await organizationModel.create({name,orgSlug});
+    const newOrg = await organizationModel.create({name,slug:orgSlug});
     return newOrg;
 
 }

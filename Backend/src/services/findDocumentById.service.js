@@ -25,3 +25,4 @@ async function getDocumentById(docId, userId) {
 }
 
 module.exports = {getDocumentById};
+

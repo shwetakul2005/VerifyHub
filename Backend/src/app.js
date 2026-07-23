@@ -31,4 +31,11 @@ app.use("/api/workflow-step", workflowStepRoutes);
 const verificatnoRequestRouter = require("./routes/verification-request.routes")
 app.use("/api/verification-requests", verificatnoRequestRouter);
 
+const workflowEngineRouter = require("./routes/workflow-engine.routes")
+app.use("/api/workflow-engine", workflowEngineRouter);
+
+const emailVerificationRouter = require("./routes/email-verification.routes");
+app.use("/api/email", emailVerificationRouter);
+
+
 module.exports = app;
