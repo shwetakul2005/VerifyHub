@@ -1,61 +1,8 @@
-// const verificationRequestModel = require("../../../models/verification-request.model");
-// const verificationStepExecution = require("../../../models/verification-step-execution.model");
-// const crypto = require("crypto");
-// const workflowEngineService = require("../workflow-engine.service");
-// const token = crypto.randomBytes(32).toString("hex");
-// import sendEmail from "./email";
-
-// async function execute (verificationRequest){
-//     await verificationRequest.populate("applicant");
-//     await verificationRequest.populate("currentStep");
-//     const applicant = currentRequest.applicant;
-//     const currentStep = currentRequest.currentStep;
-//     const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 mins
-
-//     const tokenEmailVerification = jwt.sign(
-//             {id: currentRequest._id, username:applicant, role: currentStep},
-//             process.env.JWT_SECRET_EMAIL_SERVICE,
-//             {expiresIn: expiresAt});
-    
-//     await verificationStepExecution.create({verificationRequest, workflowStep: verificationRequest.currentStep, status:"in_progress", metadata:{token,verified: false,expiresAt}, startedAt: new Date()} )
-
-//     sendEmail();
-//     workflowEngineService.moveToNextStep
-    
-// }
-
-// async function verifyToken(token) {
-//     const execution = await VerificationStepExecution.findOne({"metadata.token": token});
-//     if (!execution) {
-//         throw new Error("Invalid verification token.");
-//     }
-
-//     if (new Date() > execution.metadata.expiresAt) {
-//         throw new Error("Verification token has expired.");
-//     }
-//     execution.metadata.verified = true;
-//     execution.status = "completed";
-//     execution.completedAt = new Date();
-
-//     await execution.save();
-//     await workflowEngineService.moveToNextStep(
-//     execution.verificationRequest
-// );
-// }
-
-
-
-
-
-// // module.exports = {execute, verifyToken};
-
-
-
 const crypto = require("crypto");
 
 const VerificationStepExecution = require("../../../models/verification-step-execution.model");
-const workflowEngineService = require("../workflow-engine.service");
-const { sendEmail } = require("../../mail/mail.service");
+const workflowEngineService = require("../../workflow-engine.service");
+const { sendEmail } = require("../emailVerification/email");
 
 async function execute(verificationRequest) {
     // Populate required references
@@ -67,6 +14,7 @@ async function execute(verificationRequest) {
 
     // Generate secure token
     const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
     // Token expires in 30 minutes
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
@@ -76,8 +24,8 @@ async function execute(verificationRequest) {
         verificationRequest: verificationRequest._id,
         workflowStep: workflowStep._id,
         status: "in_progress",
-        metadata: {
-            token,
+        metaData: {
+            token:tokenHash,
             verified: false,
             expiresAt
         },
@@ -111,11 +59,12 @@ async function execute(verificationRequest) {
     `;
 
     // Send email
-    await sendEmail({
-        to: applicant.email,
-        subject: "Verify your Email",
+    await sendEmail(
+        applicant.email,
+        "Verify your Email",
+        'This is a test email sent with Nodemailer using OAuth2.',
         html
-    });
+    );
 
     return {
         success: true,
@@ -126,17 +75,32 @@ async function execute(verificationRequest) {
 
 async function verifyToken(token) {
 
+    if (!token) {
+        throw new Error("Token not found.");
+    }
+    
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    
     const execution = await VerificationStepExecution.findOne({
-        "metadata.token": token
-    });
+        "metadata.token": tokenHash,
+        status: "in_progress"
+    }).populate("verificationRequest");
+
+    
 
     if (!execution) {
-        throw new Error("Invalid verification token.");
+        throw new Error("Invalid verification token or already processed.");
     }
 
-    if (execution.metadata.verified) {
-        throw new Error("Email already verified.");
+    if (
+        !execution.verificationRequest.currentStep.equals(
+            execution.workflowStep
+        )
+    ) {
+        throw new Error("This verification step is no longer active.");
     }
+
+   
 
     if (new Date() > new Date(execution.metadata.expiresAt)) {
         execution.status = "failed";

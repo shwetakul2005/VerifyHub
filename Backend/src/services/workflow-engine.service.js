@@ -1,4 +1,4 @@
-const emailVerificationService = require("./verification/email-verification.service");
+const emailVerificationService = require("./verification/emailVerification/email-verification.service");
 const phoneVerificationService = require("./verification/phone-verification.service");
 const documentVerificationService = require("./verification/document-verification.service");
 const policeVerificationService = require("./verification/police-verification.service");
