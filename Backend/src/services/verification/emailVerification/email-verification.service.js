@@ -24,7 +24,7 @@ async function execute(verificationRequest) {
         verificationRequest: verificationRequest._id,
         workflowStep: workflowStep._id,
         status: "in_progress",
-        metaData: {
+        metadata: {
             token:tokenHash,
             verified: false,
             expiresAt

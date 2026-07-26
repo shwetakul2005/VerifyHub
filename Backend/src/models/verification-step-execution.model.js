@@ -16,7 +16,7 @@ const VerificationStepExecutionSchema = new mongoose.Schema({
         enum: ["pending", "in_progress", "completed", "failed"],
         default: "pending"
     },
-    metaData:{
+    metadata:{
         type: mongoose.Schema.Types.Mixed,
         default: {}
     },
