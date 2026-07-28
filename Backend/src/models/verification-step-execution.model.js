@@ -32,5 +32,5 @@ const VerificationStepExecutionSchema = new mongoose.Schema({
     timestamps:true
 })
 
-const verificationStepExecution = mongoose.model("VerificationStepExecution", VerificationStepExecutionSchema);
-module.exports = verificationStepExecution;
+const verificationStepExecutionModel = mongoose.model("VerificationStepExecution", VerificationStepExecutionSchema);
+module.exports = verificationStepExecutionModel;

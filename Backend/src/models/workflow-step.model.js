@@ -35,7 +35,19 @@ const workflowStepSchema = new mongoose.Schema({
     },
     config: {
         type: mongoose.Schema.Types.Mixed,
-        default: {}
+        default: {},
+        documentType: {
+        type: String,
+        enum: [
+            "Aadhaar",
+            "PAN",
+            "Passport",
+            "Driving License",
+            "Degree Certificate",
+            "Marksheet",
+            "Other"
+        ]
+    }
     }
 
 },

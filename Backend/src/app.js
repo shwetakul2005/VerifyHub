@@ -13,11 +13,11 @@ const authRouter = require("./routes/auth.routes");
 // using all the routes with the prefix /api/auth
 app.use("/api/auth", authRouter);
 
-const docRouter = require("./routes/document.routes");
-app.use("/api/documents", docRouter);
+const verificationDocRouter = require("./routes/verification-document.routes");
+app.use("/api/verification-requests", verificationDocRouter);
 
-const verificationRouter = require("./routes/verification.routes");
-app .use("/api/verification", verificationRouter);
+// const verificationRouter = require("./routes/verification.routes");
+// app .use("/api/verification", verificationRouter);
 
 const organizationRouter = require("./routes/organization.routes")
 app.use("/api/organizations", organizationRouter);
@@ -36,6 +36,9 @@ app.use("/api/workflow-engine", workflowEngineRouter);
 
 const emailVerificationRouter = require("./routes/email-verification.routes");
 app.use("/api/email", emailVerificationRouter);
+
+const verifierRouter = require("./routes/verifier.routes");
+app.use("/api/verifier", verifierRouter);
 
 
 module.exports = app;

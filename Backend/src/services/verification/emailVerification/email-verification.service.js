@@ -1,7 +1,6 @@
 const crypto = require("crypto");
 
 const VerificationStepExecution = require("../../../models/verification-step-execution.model");
-const workflowEngineService = require("../../workflow-engine.service");
 const { sendEmail } = require("../emailVerification/email");
 
 async function execute(verificationRequest) {
@@ -14,7 +13,7 @@ async function execute(verificationRequest) {
 
     // Generate secure token
     const token = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    // const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
     // Token expires in 30 minutes
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
@@ -25,7 +24,7 @@ async function execute(verificationRequest) {
         workflowStep: workflowStep._id,
         status: "in_progress",
         metadata: {
-            token:tokenHash,
+            token:token,
             verified: false,
             expiresAt
         },
@@ -64,29 +63,31 @@ async function execute(verificationRequest) {
         "Verify your Email",
         'This is a test email sent with Nodemailer using OAuth2.',
         html
-    );
+);
 
     return {
         success: true,
-        completed: false,
+        completed: true,
         message: "Verification email sent."
     };
 }
 
 async function verifyToken(token) {
+    const workflowEngineService = require("../../workflow-engine.service");
 
     if (!token) {
         throw new Error("Token not found.");
     }
     
-    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    // const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
     
     const execution = await VerificationStepExecution.findOne({
-        "metadata.token": tokenHash,
+        "metadata.token": token,
+        // metadata:{
+        //     token:token
+        // },
         status: "in_progress"
     }).populate("verificationRequest");
-
-    
 
     if (!execution) {
         throw new Error("Invalid verification token or already processed.");
@@ -115,15 +116,15 @@ async function verifyToken(token) {
     await execution.save();
 
     // Move workflow to next step
-    const updatedRequest = await workflowEngineService.moveToNextStep(
-        execution.verificationRequest
-    );
+    // console.log(workflowEngineService);
+    // const updatedRequest = await workflowEngineService.moveToNextStep(
+    //     execution.verificationRequest
+    // );
 
     return {
         success: true,
         completed: true,
-        message: "Email verified successfully.",
-        verificationRequest: updatedRequest
+        message: "Email verified successfully."
     };
 }
 

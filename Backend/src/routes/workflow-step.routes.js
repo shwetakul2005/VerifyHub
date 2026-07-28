@@ -12,7 +12,7 @@ const roleMiddleware = require("../middlewares/role.middleware");
 workflowStepRouter.post(
     "/",
     authMiddleware.authUser,
-    roleMiddleware.authRoles("admin"),
+    roleMiddleware.authRoles("admin", "verifier"),
     workflowStepController.createWorkflowStepController
 );
 
@@ -49,7 +49,7 @@ workflowStepRouter.get(
 workflowStepRouter.patch(
     "/:id",
     authMiddleware.authUser,
-    roleMiddleware.authRoles("admin"),
+    roleMiddleware.authRoles("admin", "verifier"),
     workflowStepController.updateWorkflowStepController
 );
 

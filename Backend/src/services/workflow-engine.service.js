@@ -1,6 +1,6 @@
 const emailVerificationService = require("./verification/emailVerification/email-verification.service");
 const phoneVerificationService = require("./verification/phone-verification.service");
-const documentVerificationService = require("./verification/document-verification.service");
+const documentVerificationService = require("./verification/documentVerification/document-verification.service");
 const policeVerificationService = require("./verification/police-verification.service");
 const medicalVerificationService = require("./verification/medical-verification.service");
 const VerificationRequestModel = require("../models/verification-request.model");
@@ -17,8 +17,10 @@ async function startVerification(requestId){
     verificationRequest.status = "in_progress";
     verificationRequest.startedAt = new Date();
     await verificationRequest.save();
-
-    return await executeCurrentStep(requestId);
+    console.log("reached here000");
+    await executeCurrentStep(requestId);
+    console.log("reached here");
+    return verificationRequest;
 }
 
 async function executeCurrentStep(requestId){
@@ -32,25 +34,55 @@ async function executeCurrentStep(requestId){
     }
     
     switch (verificationRequest.currentStep.stepType) {
-        case "email":
+        case "email": {
             const result = await emailVerificationService.execute(verificationRequest);
-            if(result.completed){
+
+            if (result.completed) {
                 return await moveToNextStep(requestId);
             }
+
             return result;
+        }
+            
+        case "phone": {
+            const result = await phoneVerificationService.execute(verificationRequest);
 
-        case "phone":
-            return await phoneVerificationService.execute(verificationRequest);
+            if (result.completed) {
+                return await moveToNextStep(requestId);
+            }
 
-        case "document":
-            return await documentVerificationService.execute(verificationRequest);
+            return result;
+        }
+                
+        case "document": {
+            const result =
+                await documentVerificationService.execute(
+                    verificationRequest
+                );
 
-        case "police":
-            return await policeVerificationService.execute(verificationRequest);
+            if (result.completed) {
+                return await moveToNextStep(requestId);
+            }
 
-        case "medical":
-            return await medicalVerificationService.execute(verificationRequest);
+            return result;
+        }
 
+        case "police":{
+            const result = await policeVerificationService.execute(verificationRequest);
+            if (result.completed) {
+                return await moveToNextStep(requestId);
+            }
+
+            return result;
+        }
+        case "medical":{
+            const result = await medicalVerificationService.execute(verificationRequest);
+            if (result.completed) {
+                return await moveToNextStep(requestId);
+            }
+
+            return result;
+        }
         default:
             throw new Error("Invalid workflow step.");
     }
@@ -75,7 +107,8 @@ async function moveToNextStep(requestId){
     }
     verificationRequest.currentStep = nextStep._id;
     await verificationRequest.save();
-    return verificationRequest;
+    return await executeCurrentStep(verificationRequest._id);
+    // return verificationRequest;
 }
 
 async function completeVerification(requestId){

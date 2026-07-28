@@ -1,6 +1,6 @@
 const OrganizationModel = require("../models/organization.model");
 const workflowTemplateModel = require("../models/workflow-template.model");
-
+const UserModel = require("../models/user.model");
 async function createWorkflowTemplate(data){
     
    const {
@@ -8,13 +8,23 @@ async function createWorkflowTemplate(data){
         organization,
         description,
         status,
-        createdBy
+        createdBy,
+        assignedVerifier
         } = data;
 
     const existingWorkflow = await workflowTemplateModel.findOne({name, organization});
 
     if(existingWorkflow) {
         throw new Error("Workflow template already exists.");
+    }
+
+    const verifier = await UserModel.findOne({
+        _id: assignedVerifier,
+        role: "verifier"
+    });
+
+    if (!verifier) {
+        throw new Error("Invalid verifier selected.");
     }
 
     const createdWorkflow = await workflowTemplateModel.create(data);

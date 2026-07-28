@@ -34,13 +34,20 @@ async function getWorkflowStepById(stepId){
 }
 
 async function updateWorkflowStep(stepId, data){
-    const { title, description, status, stepOrder,isRequired, config  } = data;
 
     const workflowStep = await workflowStepModel.findById(stepId);
 
     if (!workflowStep) {
         throw new Error("Workflow step not found.");
     }
+
+    const title = data.title ?? workflowStep.title;
+    const description = data.description ?? workflowStep.description;
+    const status = data.status ?? workflowStep.status;
+    const stepOrder = data.stepOrder ?? workflowStep.stepOrder;
+    const isRequired = data.isRequired ?? workflowStep.isRequired;
+    const config = data.config ?? workflowStep.config;
+
 
     // Prevent duplicate workflow names within the same organization
     if (stepOrder && stepOrder !== workflowStep.stepOrder) {

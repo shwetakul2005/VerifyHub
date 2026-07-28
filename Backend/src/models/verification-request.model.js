@@ -39,4 +39,5 @@ const verificationRequestSchema = new mongoose.Schema({
     timestamps:true
 })
 
-module.exports = mongoose.model("VerificationRequest", verificationRequestSchema);
+const VerificationRequestModel = mongoose.model("VerificationRequest", verificationRequestSchema);
+module.exports = VerificationRequestModel;

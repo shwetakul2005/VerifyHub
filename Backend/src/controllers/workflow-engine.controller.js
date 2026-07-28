@@ -1,10 +1,10 @@
-const WorkflowEngineServices = require("../services/workflow-engine.service");
+const workflowEngineService = require("../services/workflow-engine.service");
 
 async function startVerificationController(req,res){
     const { requestId } = req.params;
     let verificationRequest;
     try{
-        verificationRequest = await WorkflowEngineServices.startVerification(requestId);
+        verificationRequest = await workflowEngineService.startVerification(requestId);
     }catch(err){
         return res.status(400).json({
             success: false,
@@ -23,7 +23,7 @@ async function executeCurrentStepController(req,res){
     const { requestId } = req.params;
     let verificationRequest;
     try{
-        verificationRequest = await WorkflowEngineServices.executeCurrentStep(requestId);
+        verificationRequest = await workflowEngineService.executeCurrentStep(requestId);
     }catch(err){
         return res.status(400).json({
             success: false,

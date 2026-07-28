@@ -13,7 +13,7 @@ const roleMiddleware = require("../middlewares/role.middleware");
 workflowEngineRouter.post(
     "/:requestId/start", 
     authMiddleware.authUser, 
-    roleMiddleware.authRoles("admin"),
+    roleMiddleware.authRoles("admin", "verifier"),
     workflowEngineController.startVerificationController);
 
 /**
@@ -25,7 +25,7 @@ workflowEngineRouter.post(
 workflowEngineRouter.post(
     "/:requestId/execute",
     authMiddleware.authUser, 
-    roleMiddleware.authRoles("admin"),
+    roleMiddleware.authRoles("admin", "verifier"),
     workflowEngineController.executeCurrentStepController);
 
 module.exports = workflowEngineRouter;
