@@ -40,4 +40,11 @@ verificationRequestRouter.patch("/:id", authMiddleware.authUser, roleMiddleware.
  */
 verificationRequestRouter.delete("/:id", authMiddleware.authUser, roleMiddleware.authRoles("admin", "verifier"), verificationRequestController.deleteVerificationRequestController);
 
+
+/**
+ * @route GET /verification-requests/:requestId/progress
+ * @description get the status of all the workflowsteps of this request
+ * @access private
+ */
+verificationRequestRouter.get("/progress/:requestId", authMiddleware.authUser, roleMiddleware.authRoles("admin", "verifier"), verificationRequestController.progressRequestController);
 module.exports = verificationRequestRouter;

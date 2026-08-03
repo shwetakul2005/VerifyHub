@@ -20,6 +20,7 @@
     "mongoose": "^9.7.4",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.3",
-    "slugify": "^1.6.9"
+    "slugify": "^1.6.9",
+    "tesseract.js": "^7.0.0"
   }
 }

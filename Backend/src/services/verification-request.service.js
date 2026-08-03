@@ -110,10 +110,58 @@ async function deleteVerificationRequest(requestId) {
     return verificationRequest;
 }
 
+async function progressRequestController(requestId){
+    const verificationRequest = await verificationRequestModel.findById(requestId).populate("currentStep").populate("workflowTemplate");
+    const {status} = verificationRequest;
+    const {currentStep, workflowTemplate} = verificationRequest;
+    const steps = await workflowStepModel.find({
+        workflowTemplate: workflowTemplate
+    }).sort({stepOrder: 1});
+
+    const progress = [];
+
+    for (const step of steps) {
+
+        let status;
+
+        if (step.stepOrder < currentStep.stepOrder || verificationRequest.status === "completed") {
+            status = "completed";
+        }
+        else if (step.stepOrder === currentStep.stepOrder) {
+            status = "in_progress";
+        }
+        else {
+            status = "pending";
+        }
+
+        progress.push({
+            title: step.title,
+            stepOrder: step.stepOrder,
+            status
+        });
+    }
+
+    return {
+        verificationRequestId: verificationRequest._id,
+
+        overallStatus: verificationRequest.status,
+
+        
+        currentStep: {
+            id: verificationRequest.currentStep._id,
+            title: verificationRequest.currentStep.title,
+            stepOrder: verificationRequest.currentStep.stepOrder
+        },
+
+        progress: progress
+    };
+}   
+
 module.exports = {createVerificationRequest,
                     getVerificationRequests,
                     getVerificationRequestById,
                     updateVerificationRequest,
-                    deleteVerificationRequest
+                    deleteVerificationRequest,
+                    progressRequestController
                 };
 

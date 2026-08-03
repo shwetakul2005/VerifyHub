@@ -19,6 +19,25 @@ async function createVerificationRequestController(req, res) {
     }
 }
 
+async function progressRequestController(req,res) {
+    const requestId = req.params.requestId;
+
+    if(!requestId){
+        return res.status(400).json({
+            success: false,
+            message: "Request Id not recieved."
+        })
+    }
+
+    const result = await verificationRequestServices.progressRequestController(requestId);
+
+    return res.status(200).json({
+        success: true,
+        message: "Fetched verification flow status.",
+        result
+    })
+}
+
 async function getVerificationRequestsController(req, res) {
     const { organizationId } = req.query;
     // console.log(organizationId);
@@ -101,5 +120,6 @@ module.exports = {
     getVerificationRequestsController,
     getVerificationRequestByIdController,
     updateVerificationRequestController,
-    deleteVerificationRequestController
+    deleteVerificationRequestController,
+    progressRequestController
 };

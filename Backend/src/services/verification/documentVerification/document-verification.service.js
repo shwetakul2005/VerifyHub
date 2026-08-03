@@ -1,11 +1,13 @@
 const VerificationDocumentModel = require("../../../models/verification-document.model");
 const VerificationStepExecutionModel = require("../../../models/verification-step-execution.model");
+const { findParser } = require("../ocr/findParser");
+const ocrService = require("../ocr/ocr.service");
 async function execute(verificationRequest) {
     // const workflowEngineService = require("../../workflow-engine.service");
     // Populate current workflow step
     // await VerificationStepExecutionModel.populate("currentStep");
-    console.log("===== DOCUMENT EXECUTE CALLED =====");
-    console.log("Request:", verificationRequest._id);
+    // console.log("===== DOCUMENT EXECUTE CALLED =====");
+    // console.log("Request:", verificationRequest._id);
 
     // Find uploaded document(s) for the current step
     const documents = await VerificationDocumentModel.find({
@@ -44,22 +46,30 @@ async function execute(verificationRequest) {
             message: "Waiting for applicant to upload the required document."
         };
     }
-    console.log(execution);
+    // console.log(execution);
 
     // ----------------------------------------------------
     // MOCK DOCUMENT VERIFICATION
     // (Replace this section with OCR + AI later)
     // ----------------------------------------------------
+    // const text_extracted = await ocrService.extractText();
+    console.log("text extracted!");
 
     for (const document of documents) {
-
+        const imagePath = document.filePath;
+        const rawText = await ocrService.extractText(imagePath);
+        const docType = document.documentType;
+        const result = await findParser(docType, rawText);
+        
         document.metadata = {
             ...document.metadata,
-            verificationResult: "approved",
-            verifiedBy: "system",
-            confidence: 100
+            ocr:{
+                rawText: rawText,
+            },
+            extracted:{
+                result: result,
+            }
         };
-
         await document.save();
     }
 
@@ -73,6 +83,8 @@ async function execute(verificationRequest) {
         result: "approved",
         documentsVerified: documents.length
     };
+
+    
 
     await execution.save();
 
