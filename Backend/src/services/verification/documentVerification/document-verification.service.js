@@ -46,14 +46,6 @@ async function execute(verificationRequest) {
             message: "Waiting for applicant to upload the required document."
         };
     }
-    // console.log(execution);
-
-    // ----------------------------------------------------
-    // MOCK DOCUMENT VERIFICATION
-    // (Replace this section with OCR + AI later)
-    // ----------------------------------------------------
-    // const text_extracted = await ocrService.extractText();
-    console.log("text extracted!");
 
     for (const document of documents) {
         const imagePath = document.filePath;
@@ -72,8 +64,6 @@ async function execute(verificationRequest) {
         };
         await document.save();
     }
-
-    // ----------------------------------------------------
 
     execution.status = "completed";
     execution.completedAt = new Date();
