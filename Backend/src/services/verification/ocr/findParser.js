@@ -9,10 +9,10 @@ async function findParser(docType, rawText) {
     }
 
     if(docType == "Driving License"){
-        result = await drivingLicense.drivingLicense(rawText);
+        result = await drivingLicenseParser(rawText);
     }
 
-    if(docType == "Pan Card"){
+    if(docType == "PAN"){
         result = await panCardParser(rawText);
     }
 

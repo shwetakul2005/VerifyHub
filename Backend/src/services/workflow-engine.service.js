@@ -101,8 +101,6 @@ async function moveToNextStep(requestId){
     }).sort({stepOrder:1})
 
     if(!nextStep){
-        // verificationRequest.status == "completed";
-        // await verificationRequest.save();
         return await completeVerification(requestId);
     }
     verificationRequest.currentStep = nextStep._id;
@@ -117,6 +115,7 @@ async function completeVerification(requestId){
         throw new Error("Verification Request dosen't exist.");
     }
     verificationRequest.status = "completed";
+    verificationRequest.currentStep = null;
     verificationRequest.completedAt = new Date();
 
     await verificationRequest.save();

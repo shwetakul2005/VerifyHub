@@ -15,5 +15,23 @@ async def detect_face(file: UploadFile = File(...)):
     contents = await file.read()
     arr = np.frombuffer(contents, dtype=np.uint8)
     image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    result = detector.detect(image)
-    return result
+    faces = detector.detect(image)
+    response = []
+
+    for face in faces:
+
+        cropped = detector.crop_face(image, face.bbox)
+
+        path = detector.save_face(cropped)
+
+        response.append({
+            "bbox": face.bbox.tolist(),
+            "confidence": float(face.det_score),
+            "facePath": path
+        })
+
+    return {
+        "facesDetected": len(response),
+        "faces": response
+    }
+    

@@ -2,6 +2,8 @@ const VerificationDocumentModel = require("../../../models/verification-document
 const VerificationStepExecutionModel = require("../../../models/verification-step-execution.model");
 const { findParser } = require("../ocr/findParser");
 const ocrService = require("../ocr/ocr.service");
+
+
 async function execute(verificationRequest) {
     // const workflowEngineService = require("../../workflow-engine.service");
     // Populate current workflow step
@@ -14,6 +16,14 @@ async function execute(verificationRequest) {
         verificationRequest: verificationRequest._id,
         workflowStep: verificationRequest.currentStep._id
     });
+
+    if (documents.length === 0) {
+        return {
+            success: false,
+            completed: false,
+            message: "Waiting for applicant to upload the required document."
+        };
+    }
 
     let execution =
     // console.log("verificationRequest");
@@ -32,20 +42,14 @@ async function execute(verificationRequest) {
             workflowStep: verificationRequest.currentStep._id,
             status: "in_progress",
             startedAt: new Date(),
-            metaData: {
+            metadata: {
                 verificationType: "document"
             }
         });
     }
     // console.log(`execution: ${execution}`);
     // console.log(documents.length);
-    if (documents.length === 0) {
-        return {
-            success: false,
-            completed: false,
-            message: "Waiting for applicant to upload the required document."
-        };
-    }
+   
 
     for (const document of documents) {
         const imagePath = document.filePath;
@@ -65,23 +69,21 @@ async function execute(verificationRequest) {
         await document.save();
     }
 
-    execution.status = "completed";
-    execution.completedAt = new Date();
+    // execution.status = "completed";
+    // execution.completedAt = new Date();
 
-    execution.metaData = {
-        ...execution.metaData,
-        result: "approved",
-        documentsVerified: documents.length
-    };
+    // execution.metadata = {
+    //     ...execution.metadata,
+    //     result: "approved",
+    //     documentsVerified: documents.length
+    // };
 
-    
-
-    await execution.save();
+    // await execution.save();
 
     return {
         success: true,
-        completed: true,
-        message: "Document verification completed successfully."
+        completed: false,
+        message: "Document uploaded and processed. Waiting for verifier review."
     };
 }
 

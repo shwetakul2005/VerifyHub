@@ -23,11 +23,23 @@ async function approve(documentId, verifierId) {
         status: "in_progress"
     });
     
+
+    if (!execution) {
+        throw new Error(
+            "Verification step execution not found."
+        );
+    }
     
-    // execution.status = "completed";
-    // execution.completedAt = new Date();
+    execution.status = "completed";
+    execution.completedAt = new Date();
     
-    // await execution.save();
+    execution.metadata = {
+        ...execution.metadata,
+        result: "approved",
+        verifiedBy: verifierId
+    };
+
+    await execution.save();
 
     return await workflowEngineService.moveToNextStep(
         document.verificationRequest

@@ -1,6 +1,7 @@
 from insightface.app import FaceAnalysis
 import cv2
-
+import os
+import uuid
 class FaceDetector:
     def __init__(self):
         # Load model once
@@ -11,25 +12,35 @@ class FaceDetector:
         # Return bounding boxes
         if img is None:
             raise ValueError("Unable to read image.")
+        return self.app.get(img)
+
+    def crop_face(self, image, bbox):
+        x1, y1, x2, y2 = map(int, bbox)
+
+        # Prevent going outside image boundaries
+        h, w = image.shape[:2]
+
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(w, x2)
+        y2 = min(h, y2)
+
+        return image[y1:y2, x1:x2]
         
-        # img = cv2.imread(image_path)
-        faces = self.app.get(img)
 
-        if not faces:
-            return {"faceFound": False}
-        face = faces[0]
-        return {
-            "bbox": face.bbox.tolist(),
-            "confidence": float(face.det_score)
-        }
+    def save_face(self, face_image):
+        os.makedirs("faces", exist_ok=True)
+        filename = f"{uuid.uuid4().hex}.jpg"
+        path = os.path.join("faces", filename)
+        cv2.imwrite(path, face_image)
+        return path
 
-    # def crop_face(self, image_path, bbox):
-    #     # Return cropped image    
-        
+    def get_embedding(self, image):
 
-    # def save_face(self, face, output_path):
-    #     # Save cropped face
-
-
-
-
+        faces = self.detect(image)
+        if len(faces) == 0:
+            return None
+        if len(faces) > 1:
+            raise ValueError("Multiple faces detected")
+        return faces[0].embedding
+    
