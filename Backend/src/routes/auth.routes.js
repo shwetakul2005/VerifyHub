@@ -30,8 +30,8 @@ authRouter.get("/logout", authController.logoutUserController)
  * @description get the current logged in user details
  * @access private
  */
-authRouter.get("/get-me", authMiddleware.authUser,roleMiddleware.authRoles("admin", "user", "verifier"), authController.getMeController)
-// authRouter.get("/get-me", authMiddleware.authUser, authController.getMeController)
+// authRouter.get("/get-me", authMiddleware.authUser,roleMiddleware.authRoles("admin", "user", "verifier"), authController.getMeController)
+authRouter.get("/get-me", authMiddleware.authUser, authController.getMeController)
 
 
 

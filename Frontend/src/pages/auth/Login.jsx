@@ -1,13 +1,14 @@
 import {useState} from "react" 
 import { loginUser } from "../../api/auth.api";
 import { useAuth } from "../../context/AuthContext";
-
+import { useNavigate } from "react-router";
 
 
 function Login() {
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
     const {login} = useAuth();
+    const navigate = useNavigate();
 
     async function handleSubmit(e){
         e.preventDefault();
@@ -18,6 +19,16 @@ function Login() {
             email,
             password
         });
+
+        if(data.user.role === "admin") {
+            navigate("/admin");
+        }
+        else if(data.user.role === "verifier"){
+            navigate("/verifier");
+        }
+        else{
+            navigate("/dashboard");
+        }
         
         console.log("LOGIN RESPONSE:", data);
     }
