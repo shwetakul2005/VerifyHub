@@ -71,6 +71,7 @@ async function loginUserController(req,res){
     console.log(user);
     
     if(!user){
+        console.log(" USER NOT FOUND");
         return res.status(400).json({
             message: "Invalid email or password"
         })
@@ -79,6 +80,7 @@ async function loginUserController(req,res){
     const isPasswordValid = await bcrypt.compare(password, user.password)
 
     if(!isPasswordValid){
+        console.log(" Password is invalid.");
         return res.status(400).json({
             message: "Invalid email or password"
         })
@@ -97,7 +99,7 @@ async function loginUserController(req,res){
             id: user._id,
             role: user.role,
             username: user.username,
-            // email: user.email
+            email: user.email
         }
     })
 }

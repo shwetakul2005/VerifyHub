@@ -1,7 +1,15 @@
 const express = require("express");
 const cookieParser = require("cookie-parser")
+const cors = require("cors")
 // creates a backend express application
 const app = express();
+
+app.use(
+    cors({
+        origin: "http://localhost:5173",
+        credentials: true
+    })
+);
 
 // converts incoming request body to JSON format
 app.use(express.json());
