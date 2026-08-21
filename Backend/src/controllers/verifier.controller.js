@@ -1,4 +1,5 @@
 const verifierService = require("../services/verifier.service");
+const verificationDocumentService = require("../services/verification/documentVerification/view-document.service");
 
 async function approveController(req, res) {
     const documentId = req.params.id;
@@ -42,7 +43,7 @@ async function getPendingDocumentsController(req, res) {
 
 async function getVerificationRequestController(req, res) {
     const requestId = req.params.id;
-    // const verifierId = 
+    const verifierId = req.user.id;
     if (!requestId) {
         return res.status(400).json({
             success: false,
@@ -101,9 +102,40 @@ async function rejectController(req, res) {
     }
 }
 
+const path = require("path");
+
+async function viewDocumentController(req, res) {
+    try {
+        const { documentId } = req.params;
+
+        const filePath =
+            await verificationDocumentService.viewDocument(documentId);
+
+        const absolutePath = path.resolve(filePath);
+
+        return res.sendFile(absolutePath);
+
+    } catch (error) {
+        console.error("Error viewing document:", error);
+
+        if (error.message === "Document not found.") {
+            return res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: "Unable to view document."
+        });
+    }
+}
+
 module.exports = {
     approveController,
     getPendingDocumentsController,
     getVerificationRequestController,
-    rejectController
+    rejectController,
+    viewDocumentController
 }

@@ -122,9 +122,9 @@ async function getVerificationRequest(requestId, verifierId) {
         .populate("workflowTemplate")
         .populate("applicant")
         .populate("currentStep");
-    console.log(request.workflowTemplate.assignedVerifier._id);
+    console.log(request.workflowTemplate.assignedVerifier._id.toString());
     console.log(verifierId);
-    if(request.workflowTemplate.assignedVerifier._id !== verifierId){
+    if(request.workflowTemplate.assignedVerifier._id.toString() !== verifierId){
         throw new Error("You can't access this resource.")   
     }
 
