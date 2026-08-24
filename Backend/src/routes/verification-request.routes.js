@@ -3,7 +3,7 @@ const verificationRequestRouter = express.Router();
 const verificationRequestController = require("../controllers/verification-request.controller");
 const authMiddleware = require("../middlewares/auth.middleware");
 const roleMiddleware = require("../middlewares/role.middleware");
-
+const emailVerificationController = require("../controllers/email-verification.controller");
 
 /**
  * @route POST /verification-requests
@@ -56,3 +56,13 @@ module.exports = verificationRequestRouter;
  */
 verificationRequestRouter.get("/", authMiddleware.authUser, roleMiddleware.authRoles("user"), verificationRequestController.getVerificationRequestByUserIdController);
 
+/**
+ * @route
+ * @description To initialize the email verification process(sending the email)
+ */
+verificationRequestRouter.post(
+    "/:requestId/email-verification",
+    authMiddleware.authUser,
+    roleMiddleware.authRoles("user"),
+    emailVerificationController.sendEmailController
+)

@@ -1,7 +1,55 @@
 const crypto = require("crypto");
-
+const VerificationRequestModel = require("../../../models/verification-request.model")
 const VerificationStepExecution = require("../../../models/verification-step-execution.model");
 const { sendEmail } = require("../emailVerification/email");
+
+async function startEmailVerification(requestId, userId) {
+    const verificationRequest =
+        await VerificationRequestModel
+            .findById(requestId)
+            .populate("applicant")
+            .populate("currentStep");
+
+
+    // console.log("verificationRequest:", verificationRequest);
+    // console.log("applicant:", verificationRequest?.applicant);
+    // console.log("userId:", userId);
+
+    if (!verificationRequest) {
+        throw new Error("Verification request not found.");
+    }
+
+    // Make sure this request belongs to the logged-in applicant
+    if (verificationRequest.applicant._id.toString() !== userId.toString()) {
+        throw new Error("You are not authorized to access this verification request.");
+    }
+
+    // Make sure the request can still be processed
+    if (verificationRequest.status === "completed") {
+        throw new Error("Verification request is already completed.");
+    }
+
+    if (verificationRequest.status === "rejected") {
+        throw new Error("Verification request has been rejected.");
+    }
+
+    if (!verificationRequest.currentStep) {
+        throw new Error("No active workflow step.");
+    }
+
+    // Make sure the current step is email verification
+    if (verificationRequest.currentStep.stepType !== "email") {
+        throw new Error("Current workflow step is not email verification.");
+    }
+
+    // Execute the email verification step
+    await emailVerificationService.execute(verificationRequest);
+
+    return {
+        message: "Verification email sent successfully."
+    };
+}
+
 
 async function execute(verificationRequest) {
     // Populate required references
@@ -129,6 +177,7 @@ async function verifyToken(token) {
 }
 
 module.exports = {
+    startEmailVerification,
     execute,
     verifyToken
 };
