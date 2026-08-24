@@ -72,6 +72,28 @@ async function getVerificationRequestById(requestId) {
     return verificationRequest;
 }
 
+async function getVerificationRequestByUserId(userId) {
+
+    // const userExists = await userModel.findById(userId);
+    // if(!userExists){
+    //     throw new Error("User does not exist.");
+    // }
+    console.log(userId);
+    const verificationRequests = await verificationRequestModel
+        .find({applicant:userId})
+        .populate("organization")
+        .populate("workflowTemplate")
+        .populate("currentStep");
+
+    if(!verificationRequests){
+        throw new Error("No verification requsts found.")
+    }
+
+    return verificationRequests;
+
+    
+}
+
 async function updateVerificationRequest(requestId, data) {
     const { status, currentStep, completedAt } = data;
 
@@ -162,6 +184,7 @@ module.exports = {createVerificationRequest,
                     getVerificationRequestById,
                     updateVerificationRequest,
                     deleteVerificationRequest,
-                    progressRequestController
+                    progressRequestController,
+                    getVerificationRequestByUserId
                 };
 

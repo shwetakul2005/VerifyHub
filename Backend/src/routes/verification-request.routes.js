@@ -13,18 +13,18 @@ const roleMiddleware = require("../middlewares/role.middleware");
 verificationRequestRouter.post("/", authMiddleware.authUser, roleMiddleware.authRoles("admin","verifier"), verificationRequestController.createVerificationRequestController);
 
 /**
- * @route GET /verification-requests
+ * @route GET /verification-requests/organization
  * @description
  * @access private
  */
-verificationRequestRouter.get("/", authMiddleware.authUser, roleMiddleware.authRoles("admin", "verifier"), verificationRequestController.getVerificationRequestsController);
+verificationRequestRouter.get("/organization", authMiddleware.authUser, roleMiddleware.authRoles("admin", "verifier"), verificationRequestController.getVerificationRequestsOrgController);
 
 /**
  * @route GET /verification-requests/:id
  * @description
- * @access private
+ * @access Public
  */
-verificationRequestRouter.get("/:id", authMiddleware.authUser, roleMiddleware.authRoles("admin", "verifier"), verificationRequestController.getVerificationRequestByIdController);
+verificationRequestRouter.get("/:id", authMiddleware.authUser, roleMiddleware.authRoles("admin", "verifier", "user"), verificationRequestController.getVerificationRequestByIdController);
 
 /**
  * @route PATCH /verification-requests/:id
@@ -48,3 +48,11 @@ verificationRequestRouter.delete("/:id", authMiddleware.authUser, roleMiddleware
  */
 verificationRequestRouter.get("/progress/:requestId", authMiddleware.authUser, roleMiddleware.authRoles("admin", "verifier"), verificationRequestController.progressRequestController);
 module.exports = verificationRequestRouter;
+
+/**
+ * @route GET /verification-requests/
+ * @description
+ * @access private
+ */
+verificationRequestRouter.get("/", authMiddleware.authUser, roleMiddleware.authRoles("user"), verificationRequestController.getVerificationRequestByUserIdController);
+

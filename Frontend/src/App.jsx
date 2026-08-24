@@ -7,6 +7,7 @@ import ProtectedRoute from "./routes/ProtectedRouter"
 import Unauthorized from "./pages/auth/Unauthorized";
 import VerifierDashboard from "./pages/verifier/VerifierDashboard";
 import VerificationRequest from "./pages/verifier/VerificationRequest";
+import UserSingleVerificationRequest from "./pages/dashboard/VerificationRequests";
 
 function App() {
     return (
@@ -34,6 +35,14 @@ function App() {
                     element={
                         <ProtectedRoute allowedRoles={["user"]}>
                             <Dashboard />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="dashboard/request/:id"
+                    element={
+                        <ProtectedRoute allowedRoles={["verifier", "user", "admin"]}>
+                            <UserSingleVerificationRequest />
                         </ProtectedRoute>
                     }
                 />

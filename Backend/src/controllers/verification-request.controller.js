@@ -38,7 +38,8 @@ async function progressRequestController(req,res) {
     })
 }
 
-async function getVerificationRequestsController(req, res) {
+// get verification request by id of the organization
+async function getVerificationRequestsOrgController(req, res) {
     const { organizationId } = req.query;
     // console.log(organizationId);
     try {
@@ -57,6 +58,7 @@ async function getVerificationRequestsController(req, res) {
     }
 }
 
+// get verification request by the verification request id
 async function getVerificationRequestByIdController(req, res) {
     const requestId = req.params.id;
 
@@ -115,11 +117,32 @@ async function deleteVerificationRequestController(req, res) {
     }
 }
 
+// get verification request by id of the user
+async function getVerificationRequestByUserIdController(req, res) {
+    const userId  = req.user.id;
+
+    try {
+        const verificationRequests = await verificationRequestServices.getVerificationRequestByUserId(userId);
+
+        return res.status(200).json({
+            success: true,
+            message: "Verification request fetched successfully.",
+            verificationRequests
+        });
+    } catch (err) {
+        return res.status(404).json({
+            success: false,
+            message: err.message
+        });
+    }
+}
+
 module.exports = {
     createVerificationRequestController,
-    getVerificationRequestsController,
+    getVerificationRequestsOrgController,
     getVerificationRequestByIdController,
     updateVerificationRequestController,
     deleteVerificationRequestController,
-    progressRequestController
+    progressRequestController,
+    getVerificationRequestByUserIdController
 };
