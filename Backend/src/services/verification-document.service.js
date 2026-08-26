@@ -2,17 +2,21 @@ const VerificationDocumentModel = require("../models/verification-document.model
 const VerificationRequestModel = require("../models/verification-request.model");
 const WorkflowStepModel = require("../models/workflow-step.model");
 const { unlink } = require("fs/promises");
+const {
+    assertApplicantOwnsRequest,
+    assertApplicantOwnsDocument
+} = require("./document-authorization.service");
 
 
-async function uploadVerificationDocument(data) {
+async function uploadVerificationDocument(data, applicantId) {
     const {verificationRequest} = data;
     if (!data.documentType) {
         throw new Error("Document type is required.");
     }
-    const request = await VerificationRequestModel.findById(verificationRequest);
-    if (!request) {
-        throw new Error("Verification Request not found.");
-    }
+    const request = await assertApplicantOwnsRequest(
+        verificationRequest,
+        applicantId
+    );
     
     if (request.status === "completed") {
         throw new Error("Verification request is already completed.");
@@ -54,7 +58,9 @@ async function uploadVerificationDocument(data) {
     
 }
 
-async function getDocuments(requestId){
+async function getDocuments(requestId, applicantId){
+    await assertApplicantOwnsRequest(requestId, applicantId);
+
     const document = await VerificationDocumentModel.find({
         verificationRequest: requestId
     }).populate("workflowStep");
@@ -64,15 +70,17 @@ async function getDocuments(requestId){
     return document;
 }
 
-async function getDocumentsById(documentId){
-    const document = await VerificationDocumentModel.findById(documentId).populate("workflowStep");
-    if (!document) {
-        throw new Error("Document not found.");
-    }
+async function getDocumentsById(documentId, applicantId){
+    await assertApplicantOwnsDocument(documentId, applicantId);
+
+    const document = await VerificationDocumentModel.findById(documentId)
+        .populate("workflowStep");
     return document;
 }
 
-async function deleteDocument(verificationRequestId,verificationDocumentId){
+async function deleteDocument(verificationRequestId, verificationDocumentId, applicantId){
+    await assertApplicantOwnsRequest(verificationRequestId, applicantId);
+
     // Find the document
     const document =
         await VerificationDocumentModel.findOne({

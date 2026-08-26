@@ -63,7 +63,10 @@ async function uploadController(req, res) {
     }
 
     try {
-        const document = await verificationDocumentService.uploadVerificationDocument(data);
+        const document = await verificationDocumentService.uploadVerificationDocument(
+            data,
+            req.user.id
+        );
         await workflowEngineService.executeCurrentStep(
             verificationRequestId
         );
@@ -85,7 +88,10 @@ async function getDocsController(req, res) {
     const { requestId } = req.params;
 
     try {
-        const documents = await verificationDocumentService.getDocuments(requestId);
+        const documents = await verificationDocumentService.getDocuments(
+            requestId,
+            req.user.id
+        );
 
         return res.status(200).json({
             success: true,
@@ -106,7 +112,10 @@ async function getDocumentByIdController(req, res) {
     const { documentId } = req.params;
 
     try {
-        const document = await verificationDocumentService.getDocumentsById(documentId);
+        const document = await verificationDocumentService.getDocumentsById(
+            documentId,
+            req.user.id
+        );
 
         return res.status(200).json({
             success: true,
@@ -128,7 +137,8 @@ async function deleteDocumentController(req, res) {
     try {
         const result = await verificationDocumentService.deleteDocument(
             requestId,
-            documentId
+            documentId,
+            req.user.id
         );
 
         return res.status(result.status).json(result);

@@ -5,6 +5,11 @@ const policeVerificationService = require("./verification/police-verification.se
 const medicalVerificationService = require("./verification/medical-verification.service");
 const VerificationRequestModel = require("../models/verification-request.model");
 const WorkflowStepModel = require("../models/workflow-step.model");
+const VerificationStepExecutionModel = require("../models/verification-step-execution.model");
+
+function applicantCanContinue(step) {
+    return step.config?.allowApplicantToContinueWhilePending !== false;
+}
 
 async function startVerification(requestId){
     const verificationRequest = await VerificationRequestModel.findById(requestId);
@@ -64,6 +69,10 @@ async function executeCurrentStep(requestId){
                 return await moveToNextStep(requestId);
             }
 
+            if (result.success && applicantCanContinue(verificationRequest.currentStep)) {
+                return await moveToNextStep(requestId);
+            }
+
             return result;
         }
 
@@ -94,6 +103,10 @@ async function moveToNextStep(requestId){
         throw new Error("Verification Request dosen't exist.");
     }
 
+    if (!verificationRequest.currentStep) {
+        return await completeVerification(requestId);
+    }
+
     const nextStep = await WorkflowStepModel.findOne({
         workflowTemplate: verificationRequest.workflowTemplate,
         stepOrder: { $gt: verificationRequest.currentStep.stepOrder },
@@ -114,9 +127,31 @@ async function completeVerification(requestId){
     if(!verificationRequest){
         throw new Error("Verification Request dosen't exist.");
     }
-    verificationRequest.status = "completed";
+    const requiredSteps = await WorkflowStepModel.find({
+        workflowTemplate: verificationRequest.workflowTemplate,
+        status: "active",
+        isRequired: true
+    }).select("_id");
+
+    const completedExecutions = await VerificationStepExecutionModel.find({
+        verificationRequest: requestId,
+        status: "completed"
+    }).select("workflowStep");
+
+    const completedStepIds = new Set(
+        completedExecutions.map((execution) => execution.workflowStep.toString())
+    );
+    const allRequiredStepsCompleted = requiredSteps.every((step) =>
+        completedStepIds.has(step._id.toString())
+    );
+
+    verificationRequest.status = allRequiredStepsCompleted
+        ? "completed"
+        : "in_progress";
     verificationRequest.currentStep = null;
-    verificationRequest.completedAt = new Date();
+    verificationRequest.completedAt = allRequiredStepsCompleted
+        ? new Date()
+        : null;
 
     await verificationRequest.save();
     return verificationRequest;

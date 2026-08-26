@@ -51,3 +51,8 @@ export const verifyEmailToken = async (token) => {
     const response = await api.get(`/email/verify/${token}`);
     return response.data;
 };
+
+export const getDocuments = async (requestId) => {
+    const response = await api.get(`/verification-requests/${requestId}/documents`);
+    return response.data.documents;
+};

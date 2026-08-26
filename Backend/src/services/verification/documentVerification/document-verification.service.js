@@ -25,6 +25,18 @@ async function execute(verificationRequest) {
         };
     }
 
+    const unprocessedDocuments = documents.filter((document) =>
+        !document.metadata?.ocr
+    );
+
+    if (unprocessedDocuments.length === 0) {
+        return {
+            success: false,
+            completed: false,
+            message: "Document has been processed and is waiting for verifier review."
+        };
+    }
+
     let execution =
     // console.log("verificationRequest");
     // console.log(verificationRequest._id);
@@ -51,7 +63,7 @@ async function execute(verificationRequest) {
     // console.log(documents.length);
    
 
-    for (const document of documents) {
+    for (const document of unprocessedDocuments) {
         const imagePath = document.filePath;
         const rawText = await ocrService.extractText(imagePath);
         const docType = document.documentType;

@@ -75,3 +75,194 @@ Flow:
     cookies of the user using res.clearCookie("token").
 
 
+Document Verification and Email Verification Implementations:
+
+23. The verification request is connected to an applicant, an organization, a workflow template and a current
+    workflow step. The workflow step decides what the applicant has to complete next. For example, the current
+    step can be an email step or a document step.
+
+24. The email verification flow starts when the applicant clicks the Verify Email button in the frontend. The
+    frontend sends a POST request to /api/verification-requests/:requestId/email-verification. The backend first
+    checks the login cookie and confirms that the logged-in user has the user role.
+
+25. The email verification service then checks that the verification request exists, belongs to the logged-in
+    applicant, is not completed or rejected, and currently points to an email verification step. These checks are
+    important because the frontend must not be trusted for authorization decisions.
+
+26. After the request is validated, the backend creates a VerificationStepExecution record for the email step.
+    This record stores a randomly generated token, an expiry time and a verified value set to false. The token is
+    then added to a link pointing to the frontend route /verify-email/:token.
+
+27. The email is sent to the applicant's email address using Nodemailer. The email link opens the frontend first.
+    The frontend reads the token from the URL and calls GET /api/email/verify/:token. The backend searches the
+    database for an active execution containing that token.
+
+28. When the token is valid and has not expired, the backend changes the email execution status to completed and
+    changes metadata.verified to true. It then calls the workflow engine so that the next workflow step can be
+    selected. The frontend displays the success or failure message returned by the backend.
+
+29. The document verification flow starts when the applicant selects a file and submits the document form. The
+    frontend creates a FormData object containing the document file, title and documentType. It sends this data to
+    POST /api/verification-requests/:requestId/documents.
+
+30. The document upload route uses authentication middleware, role middleware and Multer. Authentication identifies
+    the user from the JWT cookie. Role middleware allows only applicants with the user role. Multer checks the
+    uploaded file type, limits the file size to 5 MB and saves the file in uploads/documents.
+
+31. The document controller validates that a file, title and document type were provided. It loads the verification
+    request and checks that its current workflow step is a document step. It also checks that the uploaded document
+    type matches the type configured in the workflow step.
+
+32. The document service contains the main document rules. It checks that the request belongs to the logged-in
+    applicant, that the request is not completed or rejected, and that the current step accepts documents. It also
+    prevents another document from being added for the same request and workflow step.
+
+33. Applicant ownership is kept in a separate document-authorization.service.js file. The helper checks request
+    ownership using both the request ID and applicant ID. For a document ID, it loads the related verification
+    request and confirms that the request belongs to the applicant.
+
+34. The ownership checks are used for all applicant document operations:
+    - Uploading a document
+    - Listing documents for a request
+    - Viewing a document by ID
+    - Deleting a document
+
+35. This authorization is implemented in the service layer instead of only in the frontend. The frontend route
+    protection improves the user experience, but it cannot protect the backend because a user can send requests
+    directly without using the frontend.
+
+36. After the document is stored, the workflow engine executes the document step. The document verification service
+    creates or reuses a VerificationStepExecution record with an in_progress status. It then sends the file to
+    Tesseract OCR and chooses a parser based on the document type.
+
+37. The OCR text and extracted values are saved in the VerificationDocument metadata field. The extracted values
+    can include a name, date of birth, Aadhaar number, PAN number or driving license number, depending on the parser.
+    OCR only extracts information. It does not by itself prove that the document is genuine or belongs to the applicant.
+
+38. After OCR processing, the document remains pending for verifier review. This is intentional. Automated text
+    extraction and human approval are treated as two different responsibilities. The document is not considered
+    finally verified only because OCR succeeded.
+
+39. A document step can now allow the applicant to continue while the verifier is reviewing the document. This is
+    controlled by the workflow step configuration:
+
+    config: {
+        allowApplicantToContinueWhilePending: true
+    }
+
+40. If allowApplicantToContinueWhilePending is false, the document step blocks the applicant from moving to the
+    next step. If the property is not provided, the current implementation allows continuation by default. This
+    default was selected so existing workflows can continue without requiring every old step to be updated.
+
+41. When continuation is allowed, the workflow engine moves the request to the next applicant step, but it does not
+    complete the document execution. The document reviewStatus stays pending and the related execution stays
+    in_progress until a verifier approves or rejects the document.
+
+42. The applicant page loads the documents belonging to the request and checks the document for the current workflow
+    step. If a document is pending, the upload form is hidden and the applicant sees a message saying that the
+    document is waiting for verifier review. This prevents the applicant from repeatedly uploading the same document.
+
+43. The verifier sees pending documents through the verifier dashboard. When the verifier approves a document, the
+    document reviewStatus becomes approved and the related execution becomes completed. When the verifier rejects a
+    document, the document becomes rejected, the execution becomes failed and the request becomes rejected.
+
+44. If the applicant has already continued to another step, verifier approval must not move the applicant backwards
+    or skip the applicant's current step. The verifier service therefore advances the workflow only when the approved
+    document is still the request's current step. If the applicant is already on another step, only the old document
+    execution is completed.
+
+45. The workflow request is marked completed only after every active required workflow step has a completed execution.
+    This preserves the main rule of the workflow: the applicant may continue while a document is under review, but the
+    complete verification request cannot be marked completed until the required document is approved.
+
+
+Architectural Decisions:
+
+46. The existing layered architecture is retained. Routes receive HTTP requests, middleware handles authentication
+    and file parsing, controllers handle HTTP responses, services contain business rules, models define MongoDB data
+    and the workflow engine coordinates transitions.
+
+47. Applicant ownership was added in a small authorization service instead of adding a large authorization framework.
+    This keeps the change easy to understand while making the checks reusable across upload, list, view and delete.
+
+48. VerificationStepExecution is used to track the result of each individual workflow step. VerificationDocument
+    stores file and OCR information, while the execution record stores whether the workflow step itself is complete.
+    Keeping these responsibilities separate allows a document to be OCR processed but still wait for human approval.
+
+49. Continuation is configurable per workflow step rather than automatically enabled for every document. Some
+    documents may be safe to review later, while other documents may be required before the applicant can continue.
+
+50. The implementation does not use a queue, a new database, or a new document model. This keeps the feature small
+    and matches the current size of the project.
+
+
+Advantages of the Current Implementation:
+
+51. Applicants receive immediate feedback instead of seeing an upload form that allows repeated submissions.
+
+52. Applicants can complete independent workflow steps while a document waits for a verifier.
+
+53. The final request cannot be marked completed until all required executions are completed.
+
+54. Applicant ownership is checked on the backend, which protects against users changing request IDs manually.
+
+55. Email verification uses a short-lived random token and a database execution record, so the token can be checked
+    and invalidated after successful use.
+
+56. The design reuses the current workflow engine and model structure, so the feature does not introduce unnecessary
+    duplicate workflow logic.
+
+
+Disadvantages and Current Limitations:
+
+57. The token is currently stored as plain text in the database. If the database is exposed, active email tokens could
+    be used by another person. A future version should store a hash of the token instead.
+
+58. Document files are stored on the local server. This can cause problems when the application runs on multiple
+    servers or when the server is restarted. Object storage such as S3 would be more suitable for production.
+
+59. Multer stores a file before all request and workflow validation is complete. If validation, database creation or
+    OCR fails, an unused file can remain in the uploads folder.
+
+60. OCR runs during the upload request. Large documents or many simultaneous uploads can make the API slow. A
+    background job would be better when the number of users increases.
+
+61. The database updates for the document, execution and request are not inside one transaction. A failure between
+    these operations can leave partial state that needs to be repaired.
+
+62. The current parser supports Aadhaar, PAN and Driving License. Other allowed document types do not yet have
+    document-specific parsing logic.
+
+63. The applicant page fetches document status when it loads or after an upload. It does not currently use real-time
+    updates, so the applicant may need to refresh or revisit the page to see a verifier decision.
+
+
+Future Scope:
+
+64. Add email notifications when a document is approved or rejected. The rejection reason should be included so the
+    applicant knows what must be corrected.
+
+65. Add polling or WebSocket updates so the applicant sees verifier decisions without refreshing the page.
+
+66. Add a document processing status such as uploaded, processing, processed and failed. This will make OCR failures
+    visible instead of treating the upload and OCR work as one operation.
+
+67. Move OCR and document parsing to a background worker or the existing ML service. The API can return quickly and
+    the worker can retry failed processing.
+
+68. Store only a hash of email tokens, add indexes for token lookup and enforce token expiry and one-time use at the
+    database level where possible.
+
+69. Add unique indexes for one document per verification request and workflow step, and one active execution per
+    request and workflow step. Application checks alone can race when two requests arrive at the same time.
+
+70. Add MongoDB transactions for related updates and add cleanup handling for files that do not receive a database
+    record.
+
+71. Add authorization for verifier actions and file viewing so a verifier can access only documents assigned to that
+    verifier or organization. Applicant ownership and verifier ownership are separate rules.
+
+72. Add automated backend and frontend tests for email tokens, ownership failures, duplicate uploads, rejected
+    documents, continuation settings and final completion rules.
+
+

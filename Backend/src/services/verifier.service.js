@@ -41,9 +41,17 @@ async function approve(documentId, verifierId) {
 
     await execution.save();
 
-    return await workflowEngineService.moveToNextStep(
+    const request = await VerificationRequest.findById(
         document.verificationRequest
     );
+
+    if (request?.currentStep?.equals(document.workflowStep)) {
+        await workflowEngineService.moveToNextStep(document.verificationRequest);
+    } else if (request && !request.currentStep) {
+        await workflowEngineService.completeVerification(document.verificationRequest);
+    }
+
+    return document;
 }
 
 async function reject(documentId, verifierId, rejectionReason) {

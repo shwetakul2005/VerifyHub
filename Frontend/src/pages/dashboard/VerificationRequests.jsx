@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 
 import {
     getReqById,
+    getDocuments,
     uploadVerificationDocument,
     startEmailVerification
 } from "../../api/applicant.api";
@@ -11,6 +12,7 @@ function VerificationRequest() {
     const { id } = useParams();
 
     const [verification, setVerification] = useState(null);
+    const [documents, setDocuments] = useState([]);
 
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
@@ -47,8 +49,23 @@ function VerificationRequest() {
         }
     };
 
+    const fetchDocuments = async () => {
+        try {
+            const data = await getDocuments(id);
+            setDocuments(data);
+        } catch (error) {
+            if (error.response?.status !== 400) {
+                setError(
+                    error.response?.data?.message ||
+                    "Failed to load uploaded documents."
+                );
+            }
+        }
+    };
+
     useEffect(() => {
         fetchRequest();
+        fetchDocuments();
     }, [id]);
 
     // Handle file selection
@@ -117,6 +134,7 @@ function VerificationRequest() {
 
             // Fetch updated verification request
             await fetchRequest();
+            await fetchDocuments();
 
         } catch (error) {
             console.error(
@@ -164,6 +182,12 @@ function VerificationRequest() {
     }
 
     const currentStep = verification.currentStep;
+    const pendingDocument = documents.find(
+        (document) => document.reviewStatus === "pending"
+    );
+    const currentStepDocument = documents.find(
+        (document) => document.workflowStep?._id === currentStep?._id
+    );
 
     return (
         <main>
@@ -256,6 +280,11 @@ function VerificationRequest() {
                         </strong>
                     </p>
 
+                    {currentStepDocument?.reviewStatus === "pending" ? (
+                        <p>
+                            Your document is uploaded and waiting for verifier review.
+                        </p>
+                    ) : (
                     <form onSubmit={handleUpload}>
 
                         <div>
@@ -310,6 +339,17 @@ function VerificationRequest() {
                         </button>
 
                     </form>
+                    )}
+                </section>
+            )}
+
+            {pendingDocument && currentStep?.stepType !== "document" && (
+                <section>
+                    <h2>Document Submitted</h2>
+                    <p>
+                        {pendingDocument.title} is waiting for verifier review.
+                        You may continue with the current verification step.
+                    </p>
                 </section>
             )}
 
