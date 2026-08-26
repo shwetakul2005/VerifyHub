@@ -43,6 +43,11 @@ export const uploadVerificationDocument = async (
 };
 
 export const startEmailVerification = async (requestId) => {
-    const response = await api.get(`/verification-requests/${requestId}/email-verification`);
+    const response = await api.post(`/verification-requests/${requestId}/email-verification`);
     return response.data;
-}
+};
+
+export const verifyEmailToken = async (token) => {
+    const response = await api.get(`/email/verify/${token}`);
+    return response.data;
+};

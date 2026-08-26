@@ -19,6 +19,15 @@ verificationRequestRouter.post("/", authMiddleware.authUser, roleMiddleware.auth
  */
 verificationRequestRouter.get("/organization", authMiddleware.authUser, roleMiddleware.authRoles("admin", "verifier"), verificationRequestController.getVerificationRequestsOrgController);
 
+verificationRequestRouter.get("/", authMiddleware.authUser, roleMiddleware.authRoles("user"), verificationRequestController.getVerificationRequestByUserIdController);
+
+verificationRequestRouter.post(
+    "/:requestId/email-verification",
+    authMiddleware.authUser,
+    roleMiddleware.authRoles("user"),
+    emailVerificationController.sendEmailController
+);
+
 /**
  * @route GET /verification-requests/:id
  * @description
@@ -48,21 +57,3 @@ verificationRequestRouter.delete("/:id", authMiddleware.authUser, roleMiddleware
  */
 verificationRequestRouter.get("/progress/:requestId", authMiddleware.authUser, roleMiddleware.authRoles("admin", "verifier"), verificationRequestController.progressRequestController);
 module.exports = verificationRequestRouter;
-
-/**
- * @route GET /verification-requests/
- * @description
- * @access private
- */
-verificationRequestRouter.get("/", authMiddleware.authUser, roleMiddleware.authRoles("user"), verificationRequestController.getVerificationRequestByUserIdController);
-
-/**
- * @route
- * @description To initialize the email verification process(sending the email)
- */
-verificationRequestRouter.post(
-    "/:requestId/email-verification",
-    authMiddleware.authUser,
-    roleMiddleware.authRoles("user"),
-    emailVerificationController.sendEmailController
-)

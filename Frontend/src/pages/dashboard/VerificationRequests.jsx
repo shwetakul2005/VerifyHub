@@ -3,7 +3,8 @@ import { useParams } from "react-router-dom";
 
 import {
     getReqById,
-    uploadVerificationDocument
+    uploadVerificationDocument,
+    startEmailVerification
 } from "../../api/applicant.api";
 
 function VerificationRequest() {
@@ -13,6 +14,7 @@ function VerificationRequest() {
 
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
+    const [sendingEmail, setSendingEmail] = useState(false);
 
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState("");
@@ -131,6 +133,24 @@ function VerificationRequest() {
         }
     };
 
+    const handleEmailVerification = async () => {
+        setError(null);
+        setSuccess("");
+
+        try {
+            setSendingEmail(true);
+            await startEmailVerification(id);
+            setSuccess("Verification email sent. Please check your inbox.");
+        } catch (error) {
+            setError(
+                error.response?.data?.message ||
+                "Failed to send verification email."
+            );
+        } finally {
+            setSendingEmail(false);
+        }
+    };
+
     if (loading) {
         return <div>Loading verification request...</div>;
     }
@@ -213,8 +233,12 @@ function VerificationRequest() {
                         Please verify your email address.
                     </p>
 
-                    <button>
-                        Verify Email
+                    <button
+                        type="button"
+                        onClick={handleEmailVerification}
+                        disabled={sendingEmail}
+                    >
+                        {sendingEmail ? "Sending..." : "Verify Email"}
                     </button>
                 </section>
             )}

@@ -42,8 +42,14 @@ async function startEmailVerification(requestId, userId) {
         throw new Error("Current workflow step is not email verification.");
     }
 
+    if (verificationRequest.status === "pending") {
+        verificationRequest.status = "in_progress";
+        verificationRequest.startedAt = new Date();
+        await verificationRequest.save();
+    }
+
     // Execute the email verification step
-    await emailVerificationService.execute(verificationRequest);
+    await execute(verificationRequest);
 
     return {
         message: "Verification email sent successfully."
@@ -59,28 +65,31 @@ async function execute(verificationRequest) {
     const applicant = verificationRequest.applicant;
     const workflowStep = verificationRequest.currentStep;
 
-    // Generate secure token
-    const token = crypto.randomBytes(32).toString("hex");
-    // const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-
-    // Token expires in 30 minutes
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-
-    // Create execution record
-    await VerificationStepExecution.create({
+    let execution = await VerificationStepExecution.findOne({
         verificationRequest: verificationRequest._id,
         workflowStep: workflowStep._id,
-        status: "in_progress",
-        metadata: {
-            token:token,
-            verified: false,
-            expiresAt
-        },
-        startedAt: new Date()
+        status: "in_progress"
     });
 
+    if (!execution || new Date() > new Date(execution.metadata.expiresAt)) {
+        const token = crypto.randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+        execution = await VerificationStepExecution.create({
+            verificationRequest: verificationRequest._id,
+            workflowStep: workflowStep._id,
+            status: "in_progress",
+            metadata: {
+                token,
+                verified: false,
+                expiresAt
+            },
+            startedAt: new Date()
+        });
+    }
+
     // Verification link
-    const verificationLink =`${process.env.FRONTEND_URL}/verify-email/${token}`;
+    const verificationLink = `${process.env.FRONTEND_URL}/verify-email/${execution.metadata.token}`;
     // Email body
     const html = `
         <h2>Email Verification</h2>
@@ -121,8 +130,6 @@ async function execute(verificationRequest) {
 }
 
 async function verifyToken(token) {
-    const workflowEngineService = require("../../workflow-engine.service");
-
     if (!token) {
         throw new Error("Token not found.");
     }
@@ -157,22 +164,33 @@ async function verifyToken(token) {
         throw new Error("Verification token has expired.");
     }
 
-    execution.metadata.verified = true;
+    execution.metadata = {
+        ...execution.metadata,
+        verified: true
+    };
+
     execution.status = "completed";
     execution.completedAt = new Date();
 
     await execution.save();
 
+    // execution.metadata.verified = true;
+    // execution.status = "completed";
+    // execution.completedAt = new Date();
+
+    // await execution.save();
+
     // Move workflow to next step
-    // console.log(workflowEngineService);
-    // const updatedRequest = await workflowEngineService.moveToNextStep(
-    //     execution.verificationRequest
-    // );
+    const workflowEngineService = require("../../workflow-engine.service");
+    const updatedRequest = await workflowEngineService.moveToNextStep(
+        execution.verificationRequest._id
+    );
 
     return {
         success: true,
         completed: true,
-        message: "Email verified successfully."
+        message: "Email verified successfully.",
+        verificationRequest: updatedRequest
     };
 }
 

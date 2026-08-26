@@ -8,6 +8,7 @@ import Unauthorized from "./pages/auth/Unauthorized";
 import VerifierDashboard from "./pages/verifier/VerifierDashboard";
 import VerificationRequest from "./pages/verifier/VerificationRequest";
 import UserSingleVerificationRequest from "./pages/dashboard/VerificationRequests";
+import VerifyEmail from "./pages/auth/VerifyEmail";
 
 function App() {
     return (
@@ -27,6 +28,11 @@ function App() {
                 <Route 
                     path="/unauthorized"
                     element={<Unauthorized />}
+                />
+
+                <Route
+                    path="/verify-email/:token"
+                    element={<VerifyEmail />}
                 />
 
                 {/* user dashboard */}
