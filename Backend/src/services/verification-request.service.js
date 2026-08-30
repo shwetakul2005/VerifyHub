@@ -3,7 +3,7 @@ const organizationModel = require("../models/organization.model");
 const workflowTemplateModel = require("../models/workflow-template.model");
 const workflowStepModel = require("../models/workflow-step.model");
 const userModel = require("../models/user.model");
-
+const VerificationStepExecutionModel = require("../models/verification-step-execution.model");
 
 async function createVerificationRequest(data){
     const {organization, workflowTemplate,
@@ -94,6 +94,118 @@ async function getVerificationRequestByUserId(userId) {
     
 }
 
+async function getApplicantWorkflowByRequestId(requestId, userId) {
+    const verificationRequest = await verificationRequestModel
+        .findById(requestId)
+        .populate("workflowTemplate")
+        .populate("currentStep")
+        .populate("applicant");
+
+    if (!verificationRequest) {
+        throw new Error("Verification request not found.");
+    }
+
+    const requestApplicantId = verificationRequest.applicant?._id
+        ? verificationRequest.applicant._id.toString()
+        : verificationRequest.applicant?.toString();
+    
+    console.log(`request applicant Id is ${requestApplicantId}`);
+    console.log(`user id is ${userId}`);
+
+
+    if (requestApplicantId !== String(userId)) {
+        throw new Error("You are not allowed to access this verification workflow.");
+    }
+    console.log(`everything fine till here!!`)
+    const workflowSteps = await workflowStepModel
+        .find({
+            workflowTemplate: verificationRequest.workflowTemplate._id,
+            status: "active"
+        })
+        .sort({ stepOrder: 1 });
+
+    const executions = await VerificationStepExecutionModel.find({ verificationRequest: requestId })
+        .lean();
+
+    const executionByStep = new Map(
+        executions.map((execution) => [execution.workflowStep.toString(), execution])
+    );
+
+    const completedStepIds = new Set(
+        executions
+            .filter((execution) => execution.status === "completed")
+            .map((execution) => execution.workflowStep.toString())
+    );
+
+    const failedStepIds = new Set(
+        executions
+            .filter((execution) => execution.status === "failed")
+            .map((execution) => execution.workflowStep.toString())
+    );
+
+    const currentStepId = verificationRequest.currentStep?._id
+        ? verificationRequest.currentStep._id.toString()
+        : null;
+
+    const steps = workflowSteps.map((step) => {
+        const stepId = step._id.toString();
+        const execution = executionByStep.get(stepId);
+        const isFailed = failedStepIds.has(stepId);
+        const isCompleted =
+            verificationRequest.status === "completed"
+                ? true
+                : completedStepIds.has(stepId) ||
+                  (currentStepId && step.stepOrder < verificationRequest.currentStep.stepOrder);
+
+        let status = "pending";
+
+        if (verificationRequest.status === "completed") {
+            status = "completed";
+        } else if (isFailed) {
+            status = "failed";
+        } else if (currentStepId && stepId === currentStepId) {
+            status = "current";
+        } else if (isCompleted) {
+            status = "completed";
+        }
+
+        return {
+            id: step._id,
+            title: step.title,
+            description: step.description,
+            stepOrder: step.stepOrder,
+            stepType: step.stepType,
+            isRequired: step.isRequired,
+            status,
+            isCompleted,
+            isFailed,
+            isCurrent: status === "current",
+            isLocked: status === "pending",
+            isViewOnly: status === "completed" || status === "failed",
+            canOpen: status === "current" || status === "completed" || status === "failed",
+            actionUrl: status === "current" ? `/dashboard/request/${requestId}` : null,
+            executionStatus: execution?.status || null,
+            completedAt: execution?.completedAt || null
+        };
+    });
+
+    return {
+        requestId: verificationRequest._id,
+        overallStatus: verificationRequest.status,
+        currentStep: verificationRequest.currentStep
+            ? {
+                id: verificationRequest.currentStep._id,
+                title: verificationRequest.currentStep.title,
+                stepOrder: verificationRequest.currentStep.stepOrder,
+                stepType: verificationRequest.currentStep.stepType,
+                description: verificationRequest.currentStep.description
+            }
+            : null,
+        workflowName: verificationRequest.workflowTemplate?.name || null,
+        steps
+    };
+}
+
 async function updateVerificationRequest(requestId, data) {
     const { status, currentStep, completedAt } = data;
 
@@ -182,6 +294,7 @@ async function progressRequestController(requestId){
 module.exports = {createVerificationRequest,
                     getVerificationRequests,
                     getVerificationRequestById,
+                    getApplicantWorkflowByRequestId,
                     updateVerificationRequest,
                     deleteVerificationRequest,
                     progressRequestController,

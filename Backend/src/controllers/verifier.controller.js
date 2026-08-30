@@ -12,7 +12,10 @@ async function approveController(req, res) {
     }
 
     try {
-        const document = await verifierService.approve(documentId);
+        const document = await verifierService.approve(
+            documentId,
+            req.user.id
+        );
 
         return res.status(200).json({
             success: true,

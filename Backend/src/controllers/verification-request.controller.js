@@ -78,6 +78,28 @@ async function getVerificationRequestByIdController(req, res) {
     }
 }
 
+async function getApplicantWorkflowController(req, res) {
+    const requestId = req.params.requestId;
+    const userId = req.user.id;
+
+    try {
+        const workflow = await verificationRequestServices.getApplicantWorkflowByRequestId(requestId, userId);
+
+        return res.status(200).json({
+            success: true,
+            message: "Applicant verification workflow fetched successfully.",
+            result: workflow
+        });
+    } catch (err) {
+        const statusCode = err.message === "Verification request not found." ? 404 : 403;
+
+        return res.status(statusCode).json({
+            success: false,
+            message: err.message
+        });
+    }
+}
+
 async function updateVerificationRequestController(req, res) {
     const requestId = req.params.id;
     const data = req.body;
@@ -141,6 +163,7 @@ module.exports = {
     createVerificationRequestController,
     getVerificationRequestsOrgController,
     getVerificationRequestByIdController,
+    getApplicantWorkflowController,
     updateVerificationRequestController,
     deleteVerificationRequestController,
     progressRequestController,

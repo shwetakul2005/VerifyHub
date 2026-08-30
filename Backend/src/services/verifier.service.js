@@ -1,15 +1,42 @@
 const VerificationDocumentModel = require("../models/verification-document.model");
 const VerificationDocument = require("../models/verification-document.model");
 const VerificationRequest = require("../models/verification-request.model");
-const verificationStepExecutionModel = require("../models/verification-step-execution.model");
+const VerificationStepExecutionModel = require("../models/verification-step-execution.model");
 const VerificationStepExecution = require("../models/verification-step-execution.model");
 const workflowEngineService = require("./workflow-engine.service");
 
 async function approve(documentId, verifierId) {
-    const document = await VerificationDocument.findById(documentId);
+    const document = await VerificationDocument.findById(documentId).populate({
+        path: "verificationRequest",
+        populate: {
+            path: "workflowTemplate",
+            select: "assignedVerifier"
+        }
+    });
 
     if (!document) {
         throw new Error("Document not found.");
+    }
+
+    if (document.reviewStatus !== "pending") {
+        throw new Error("Document has already been reviewed.");
+    }
+
+    const assignedVerifier = document.verificationRequest?.workflowTemplate?.assignedVerifier;
+    if (!assignedVerifier || !assignedVerifier.equals(verifierId)) {
+        throw new Error("You are not assigned to review this document.");
+    }
+
+    const execution = await VerificationStepExecution.findOne({
+        verificationRequest: document.verificationRequest._id,
+        workflowStep: document.workflowStep,
+        status: "in_progress"
+    });
+
+    if (!execution) {
+        throw new Error(
+            "Verification step execution not found."
+        );
     }
 
     document.reviewStatus = "approved";
@@ -17,19 +44,6 @@ async function approve(documentId, verifierId) {
     document.reviewedAt = new Date();
 
     await document.save();
-    const execution = await VerificationStepExecution.findOne({
-        verificationRequest: document.verificationRequest,
-        workflowStep: document.workflowStep,
-        status: "in_progress"
-    });
-    
-
-    if (!execution) {
-        throw new Error(
-            "Verification step execution not found."
-        );
-    }
-    
     execution.status = "completed";
     execution.completedAt = new Date();
     

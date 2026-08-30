@@ -5,14 +5,17 @@ import {
     getReqById,
     getDocuments,
     uploadVerificationDocument,
-    startEmailVerification
+    startEmailVerification,
+    getApplicantWorkflow
 } from "../../api/applicant.api";
+import { getRequestStatusMeta } from "./requestStatus";
 
 function VerificationRequest() {
     const { id } = useParams();
 
     const [verification, setVerification] = useState(null);
     const [documents, setDocuments] = useState([]);
+    const [workflow, setWorkflow] = useState(null);
 
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
@@ -63,9 +66,24 @@ function VerificationRequest() {
         }
     };
 
+    const fetchWorkflow = async () => {
+        console.log(`id is ${id}`);
+        try {
+            const data = await getApplicantWorkflow(id);
+            setWorkflow(data);
+        } catch (error) {
+            console.error("Failed to fetch applicant workflow:", error);
+            setError(
+                error.response?.data?.message ||
+                "Failed to load workflow details."
+            );
+        }
+    };
+
     useEffect(() => {
         fetchRequest();
         fetchDocuments();
+        fetchWorkflow();
     }, [id]);
 
     // Handle file selection
@@ -169,6 +187,37 @@ function VerificationRequest() {
         }
     };
 
+    const handleWorkflowStepClick = (step) => {
+        if (step.status === "completed") {
+            setSuccess(`${step.title} has already been completed.`);
+            return;
+        }
+
+        if (step.status === "failed") {
+            setError(`${step.title} failed and cannot be edited. Please review the next available step.`);
+            return;
+        }
+
+        if (step.status === "current") {
+            setSuccess(`Continue with ${step.title}.`);
+
+            const targetId =
+                step.stepType === "email"
+                    ? "email-step-section"
+                    : step.stepType === "document"
+                        ? "document-step-section"
+                        : "verification-step-section";
+
+            const target = document.getElementById(targetId);
+            if (target) {
+                target.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+            return;
+        }
+
+        setError("This step is locked until the previous step is completed.");
+    };
+
     if (loading) {
         return <div>Loading verification request...</div>;
     }
@@ -182,6 +231,7 @@ function VerificationRequest() {
     }
 
     const currentStep = verification.currentStep;
+    const requestStatusMeta = getRequestStatusMeta(verification);
     const pendingDocument = documents.find(
         (document) => document.reviewStatus === "pending"
     );
@@ -216,20 +266,96 @@ function VerificationRequest() {
 
             <hr />
 
-            {/* Current step */}
+            {workflow?.steps?.length > 0 && (
+                <section>
+                    <h2>Verification Flow</h2>
 
-            <section>
-                <h2>{currentStep?.title}</h2>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        {workflow.steps.map((step) => (
+                            <button
+                                key={step.id}
+                                type="button"
+                                onClick={() => handleWorkflowStepClick(step)}
+                                disabled={step.status === "pending" || step.status === "failed"}
+                                style={{
+                                    textAlign: "left",
+                                    padding: "12px 16px",
+                                    borderRadius: "10px",
+                                    border: "1px solid #d0d7de",
+                                    backgroundColor:
+                                        step.status === "completed"
+                                            ? "#e6ffed"
+                                            : step.status === "current"
+                                                ? "#fff7d6"
+                                                : step.status === "failed"
+                                                    ? "#ffebe9"
+                                                    : "#f6f8fa",
+                                    cursor: step.status === "pending" || step.status === "failed" ? "not-allowed" : "pointer",
+                                    opacity: step.status === "pending" || step.status === "failed" ? 0.8 : 1,
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    gap: "12px"
+                                }}
+                            >
+                                <div>
+                                    <div style={{ fontWeight: 700 }}>
+                                        {step.stepOrder}. {step.title}
+                                    </div>
+                                    <div style={{ fontSize: "0.9rem", color: "#57606a" }}>
+                                        {step.stepType}
+                                    </div>
+                                </div>
 
-                <p>
-                    {currentStep?.description}
-                </p>
+                                <span
+                                    style={{
+                                        fontSize: "0.8rem",
+                                        padding: "4px 8px",
+                                        borderRadius: "999px",
+                                        backgroundColor:
+                                            step.status === "completed"
+                                                ? "#1a7f37"
+                                                : step.status === "current"
+                                                    ? "#b7791f"
+                                                    : step.status === "failed"
+                                                        ? "#cf222e"
+                                                        : "#6e7781",
+                                        color: "white",
+                                        fontWeight: 600
+                                    }}
+                                >
+                                    {step.status === "completed"
+                                        ? "Completed"
+                                        : step.status === "current"
+                                            ? "Current"
+                                            : step.status === "failed"
+                                                ? "Failed"
+                                                : "Pending"}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </section>
+            )}
 
-                <p>
-                    <strong>Step type:</strong>{" "}
-                    {currentStep?.stepType}
-                </p>
-            </section>
+            {!requestStatusMeta.isCompleted && (
+                <>
+                    {/* Current step */}
+
+                    <section>
+                        <h2>{currentStep?.title}</h2>
+
+                        <p>
+                            {currentStep?.description}
+                        </p>
+
+                        <p>
+                            <strong>Step type:</strong>{" "}
+                            {currentStep?.stepType}
+                        </p>
+                    </section>
+                </>
+            )}
 
             {/* Error */}
 
@@ -250,7 +376,7 @@ function VerificationRequest() {
             {/* EMAIL STEP */}
 
             {currentStep?.stepType === "email" && (
-                <section>
+                <section id="email-step-section">
                     <h2>Email Verification</h2>
 
                     <p>
@@ -270,7 +396,7 @@ function VerificationRequest() {
             {/* DOCUMENT STEP */}
 
             {currentStep?.stepType === "document" && (
-                <section>
+                <section id="document-step-section">
                     <h2>Document Verification</h2>
 
                     <p>
@@ -344,7 +470,7 @@ function VerificationRequest() {
             )}
 
             {pendingDocument && currentStep?.stepType !== "document" && (
-                <section>
+                <section id="verification-step-section">
                     <h2>Document Submitted</h2>
                     <p>
                         {pendingDocument.title} is waiting for verifier review.
@@ -355,12 +481,12 @@ function VerificationRequest() {
 
             {/* COMPLETED */}
 
-            {verification.status === "completed" && (
+            {(verification.status === "completed" || !currentStep) && (
                 <section>
-                    <h2>Verification Completed</h2>
+                    <h2>{requestStatusMeta.banner}</h2>
 
                     <p>
-                        Your verification request has been completed.
+                        {requestStatusMeta.message}
                     </p>
                 </section>
             )}
@@ -369,10 +495,10 @@ function VerificationRequest() {
 
             {verification.status === "rejected" && (
                 <section>
-                    <h2>Verification Rejected</h2>
+                    <h2>{requestStatusMeta.banner}</h2>
 
                     <p>
-                        Your verification request has been rejected.
+                        {requestStatusMeta.message}
                     </p>
                 </section>
             )}

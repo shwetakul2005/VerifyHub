@@ -21,6 +21,13 @@ verificationRequestRouter.get("/organization", authMiddleware.authUser, roleMidd
 
 verificationRequestRouter.get("/", authMiddleware.authUser, roleMiddleware.authRoles("user"), verificationRequestController.getVerificationRequestByUserIdController);
 
+verificationRequestRouter.get(
+    "/:requestId/flow",
+    authMiddleware.authUser,
+    roleMiddleware.authRoles("user", "verifier", "admin"),
+    verificationRequestController.getApplicantWorkflowController
+);
+
 verificationRequestRouter.post(
     "/:requestId/email-verification",
     authMiddleware.authUser,

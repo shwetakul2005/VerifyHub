@@ -22,6 +22,11 @@ export const getReqById = async (id) => {
     return response.data.verificationRequest;
 };
 
+export const getApplicantWorkflow = async (requestId) => {
+    const response = await api.get(`/verification-requests/${requestId}/flow`);
+    return response.data.result;
+};
+
 export const uploadVerificationDocument = async (
     requestId,
     file,
