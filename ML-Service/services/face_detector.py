@@ -2,6 +2,7 @@ from insightface.app import FaceAnalysis
 import cv2
 import os
 import uuid
+import numpy as np
 class FaceDetector:
     def __init__(self):
         # Load model once
@@ -36,11 +37,18 @@ class FaceDetector:
         return path
 
     def get_embedding(self, image):
+        if image is None:
+            return None
 
         faces = self.detect(image)
         if len(faces) == 0:
             return None
         if len(faces) > 1:
             raise ValueError("Multiple faces detected")
-        return faces[0].embedding
+
+        embedding = getattr(faces[0], "embedding", None)
+        if embedding is None or np.asarray(embedding).size == 0:
+            return None
+
+        return embedding
     

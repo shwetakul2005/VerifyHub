@@ -4,6 +4,7 @@ const verificationRequestController = require("../controllers/verification-reque
 const authMiddleware = require("../middlewares/auth.middleware");
 const roleMiddleware = require("../middlewares/role.middleware");
 const emailVerificationController = require("../controllers/email-verification.controller");
+const upload = require("../middlewares/upload.middleware");
 
 /**
  * @route POST /verification-requests
@@ -33,6 +34,17 @@ verificationRequestRouter.post(
     authMiddleware.authUser,
     roleMiddleware.authRoles("user"),
     emailVerificationController.sendEmailController
+);
+
+verificationRequestRouter.post(
+    "/:requestId/face-verification",
+    authMiddleware.authUser,
+    roleMiddleware.authRoles("user"),
+    upload.fields([
+        { name: "document", maxCount: 1 },
+        { name: "live", maxCount: 1 }
+    ]),
+    verificationRequestController.submitFaceVerificationController
 );
 
 /**

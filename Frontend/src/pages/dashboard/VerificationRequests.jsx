@@ -6,7 +6,8 @@ import {
     getDocuments,
     uploadVerificationDocument,
     startEmailVerification,
-    getApplicantWorkflow
+    getApplicantWorkflow,
+    submitFaceVerification
 } from "../../api/applicant.api";
 import { getRequestStatusMeta } from "./requestStatus";
 
@@ -20,12 +21,15 @@ function VerificationRequest() {
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
     const [sendingEmail, setSendingEmail] = useState(false);
+    const [submittingFaceVerification, setSubmittingFaceVerification] = useState(false);
 
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState("");
 
     const [title, setTitle] = useState("");
     const [file, setFile] = useState(null);
+    const [documentImage, setDocumentImage] = useState(null);
+    const [liveSelfie, setLiveSelfie] = useState(null);
 
     // Fetch verification request
     const fetchRequest = async () => {
@@ -187,6 +191,49 @@ function VerificationRequest() {
         }
     };
 
+    const handleFaceVerificationSubmit = async (event) => {
+        event.preventDefault();
+
+        setError(null);
+        setSuccess("");
+
+        if (!documentImage) {
+            setError("Please upload the document image.");
+            return;
+        }
+
+        if (!liveSelfie) {
+            setError("Please upload your live selfie.");
+            return;
+        }
+
+        try {
+            setSubmittingFaceVerification(true);
+            const response = await submitFaceVerification(id, documentImage, liveSelfie);
+
+            if (response?.success) {
+                setSuccess(response.message || "Face verification completed successfully.");
+            } else {
+                setError(response?.message || "Face verification failed.");
+            }
+
+            await fetchRequest();
+            await fetchWorkflow();
+            await fetchDocuments();
+
+            setDocumentImage(null);
+            setLiveSelfie(null);
+            event.target.reset();
+        } catch (error) {
+            setError(
+                error.response?.data?.message ||
+                "Failed to verify your face."
+            );
+        } finally {
+            setSubmittingFaceVerification(false);
+        }
+    };
+
     const handleWorkflowStepClick = (step) => {
         if (step.status === "completed") {
             setSuccess(`${step.title} has already been completed.`);
@@ -206,12 +253,9 @@ function VerificationRequest() {
                     ? "email-step-section"
                     : step.stepType === "document"
                         ? "document-step-section"
-                        : "verification-step-section";
-
-            const target = document.getElementById(targetId);
-            if (target) {
-                target.scrollIntoView({ behavior: "smooth", block: "start" });
-            }
+                        : step.stepType === "face_verification"
+                            ? "face-verification-step-section"
+                            : "verification-step-section";
             return;
         }
 
@@ -466,6 +510,46 @@ function VerificationRequest() {
 
                     </form>
                     )}
+                </section>
+            )}
+
+            {currentStep?.stepType === "face_verification" && (
+                <section id="face-verification-step-section">
+                    <h2>Face Verification</h2>
+
+                    <p>
+                        Upload the document image and a live selfie to verify your identity.
+                    </p>
+
+                    <form onSubmit={handleFaceVerificationSubmit}>
+                        <div>
+                            <label>Document image</label>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(event) => setDocumentImage(event.target.files[0])}
+                                disabled={submittingFaceVerification}
+                            />
+                        </div>
+
+                        <br />
+
+                        <div>
+                            <label>Live selfie</label>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(event) => setLiveSelfie(event.target.files[0])}
+                                disabled={submittingFaceVerification}
+                            />
+                        </div>
+
+                        <br />
+
+                        <button type="submit" disabled={submittingFaceVerification}>
+                            {submittingFaceVerification ? "Verifying..." : "Submit Face Verification"}
+                        </button>
+                    </form>
                 </section>
             )}
 

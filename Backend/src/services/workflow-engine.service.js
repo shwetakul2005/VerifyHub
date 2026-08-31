@@ -1,6 +1,7 @@
 const emailVerificationService = require("./verification/emailVerification/email-verification.service");
 const phoneVerificationService = require("./verification/phone-verification.service");
 const documentVerificationService = require("./verification/documentVerification/document-verification.service");
+const faceVerificationService = require("./verification/faceVerification/face-verification.service");
 const policeVerificationService = require("./verification/police-verification.service");
 const medicalVerificationService = require("./verification/medical-verification.service");
 const VerificationRequestModel = require("../models/verification-request.model");
@@ -70,6 +71,16 @@ async function executeCurrentStep(requestId){
             }
 
             if (result.success && applicantCanContinue(verificationRequest.currentStep)) {
+                return await moveToNextStep(requestId);
+            }
+
+            return result;
+        }
+
+        case "face_verification": {
+            const result = await faceVerificationService.execute(verificationRequest);
+
+            if (result.completed) {
                 return await moveToNextStep(requestId);
             }
 

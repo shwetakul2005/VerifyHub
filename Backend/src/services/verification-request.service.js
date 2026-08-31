@@ -4,6 +4,7 @@ const workflowTemplateModel = require("../models/workflow-template.model");
 const workflowStepModel = require("../models/workflow-step.model");
 const userModel = require("../models/user.model");
 const VerificationStepExecutionModel = require("../models/verification-step-execution.model");
+const faceVerificationService = require("./verification/faceVerification/face-verification.service");
 
 async function createVerificationRequest(data){
     const {organization, workflowTemplate,
@@ -244,6 +245,10 @@ async function deleteVerificationRequest(requestId) {
     return verificationRequest;
 }
 
+async function submitFaceVerificationStep(requestId, applicantId, files) {
+    return await faceVerificationService.submitFaceVerificationStep(requestId, applicantId, files);
+}
+
 async function progressRequestController(requestId){
     const verificationRequest = await verificationRequestModel.findById(requestId).populate("currentStep").populate("workflowTemplate");
     const {status} = verificationRequest;
@@ -297,7 +302,7 @@ module.exports = {createVerificationRequest,
                     getApplicantWorkflowByRequestId,
                     updateVerificationRequest,
                     deleteVerificationRequest,
-                    progressRequestController,
+    submitFaceVerificationStep,
                     getVerificationRequestByUserId
                 };
 

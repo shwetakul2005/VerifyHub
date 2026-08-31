@@ -100,6 +100,29 @@ async function getApplicantWorkflowController(req, res) {
     }
 }
 
+async function submitFaceVerificationController(req, res) {
+    const requestId = req.params.requestId;
+    const applicantId = req.user.id;
+    const files = req.files || {};
+
+    try {
+        const result = await verificationRequestServices.submitFaceVerificationStep(requestId, applicantId, files);
+
+        return res.status(result.success ? 200 : 400).json({
+            success: result.success,
+            message: result.message,
+            result: result.result,
+            execution: result.execution,
+            verificationRequest: result.verificationRequest || null
+        });
+    } catch (err) {
+        return res.status(400).json({
+            success: false,
+            message: err.message
+        });
+    }
+}
+
 async function updateVerificationRequestController(req, res) {
     const requestId = req.params.id;
     const data = req.body;
@@ -167,5 +190,6 @@ module.exports = {
     updateVerificationRequestController,
     deleteVerificationRequestController,
     progressRequestController,
-    getVerificationRequestByUserIdController
+    getVerificationRequestByUserIdController,
+    submitFaceVerificationController
 };
