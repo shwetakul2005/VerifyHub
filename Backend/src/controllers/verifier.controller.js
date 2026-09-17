@@ -66,7 +66,7 @@ async function getVerificationRequestController(req, res) {
             request
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         });
