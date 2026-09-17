@@ -1,17 +1,20 @@
 const emailVerificationService = require("./verification/emailVerification/email-verification.service");
 const phoneVerificationService = require("./verification/phone-verification.service");
 const documentVerificationService = require("./verification/documentVerification/document-verification.service");
+const faceVerificationService = require("./verification/faceVerification/face-verification.service");
 const policeVerificationService = require("./verification/police-verification.service");
 const medicalVerificationService = require("./verification/medical-verification.service");
 const VerificationRequestModel = require("../models/verification-request.model");
 const WorkflowStepModel = require("../models/workflow-step.model");
 const VerificationStepExecutionModel = require("../models/verification-step-execution.model");
+const { requireRequestAccess } = require("./authorization.service");
 
-function applicantCanContinue(step) {
-    return step.config?.allowApplicantToContinueWhilePending !== false;
-}
-
-async function startVerification(requestId){
+async function startVerification(requestId, actorId){
+    if (actorId) {
+        await requireRequestAccess(actorId, requestId, {
+            organizationRoles: ["org_admin"]
+        });
+    }
     const verificationRequest = await VerificationRequestModel.findById(requestId);
     if(!verificationRequest) {
         throw new Error("Verification Request not found.");
@@ -22,13 +25,17 @@ async function startVerification(requestId){
     verificationRequest.status = "in_progress";
     verificationRequest.startedAt = new Date();
     await verificationRequest.save();
-    console.log("reached here000");
     await executeCurrentStep(requestId);
-    console.log("reached here");
     return verificationRequest;
 }
 
-async function executeCurrentStep(requestId){
+async function executeCurrentStep(requestId, actorId){
+    if (actorId) {
+        await requireRequestAccess(actorId, requestId, {
+            organizationRoles: ["org_admin", "verifier"],
+            requireAssignedVerifier: true
+        });
+    }
     const verificationRequest = await VerificationRequestModel.findById(requestId);
     if(!verificationRequest){
         throw new Error("Verification Request dosen't exist.");
@@ -69,7 +76,13 @@ async function executeCurrentStep(requestId){
                 return await moveToNextStep(requestId);
             }
 
-            if (result.success && applicantCanContinue(verificationRequest.currentStep)) {
+            return result;
+        }
+
+        case "face_verification": {
+            const result = await faceVerificationService.execute(verificationRequest);
+
+            if (result.completed) {
                 return await moveToNextStep(requestId);
             }
 

@@ -13,7 +13,7 @@ const workflowStepSchema = new mongoose.Schema({
     stepType:{
         type:String,
         required: true,
-        enum: ["email", "phone", "document", "police", "medical"]
+        enum: ["email", "phone", "document", "face_verification", "police", "medical"]
     },
     title:{
         type: String,

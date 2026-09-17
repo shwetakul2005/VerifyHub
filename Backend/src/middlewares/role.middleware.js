@@ -5,8 +5,14 @@ const jwt = require('jsonwebtoken')
 // params given to the function in a single array
 const authRoles = (...roles) => {
   return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: "Authentication is required."
+            });
+        }
+
         if(!roles.includes(req.user.role)){
-            console.log(req.user.role);
             return res.status(403).json({
                 success: false,
                 message: "You aren't authorized to access this resource."

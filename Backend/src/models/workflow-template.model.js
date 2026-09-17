@@ -19,6 +19,10 @@ const workflowTemplateSchema = new mongoose.Schema({
         enum: ["draft", "published", "archived"],
         default: "draft"
     },
+    version:{
+        type: Number,
+        default: 1
+    },
     createdBy:{
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
@@ -28,6 +32,14 @@ const workflowTemplateSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         required: true
+    },
+    publishedAt: {
+        type: Date,
+        default: null
+    },
+    archivedAt: {
+        type: Date,
+        default: null
     }
 },{
     timestamps:true

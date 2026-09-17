@@ -2,7 +2,7 @@ const express = require("express");
 const workflowStepRouter = express.Router();
 const workflowStepController = require("../controllers/workflow-step.controller");
 const authMiddleware = require("../middlewares/auth.middleware");
-const roleMiddleware = require("../middlewares/role.middleware");
+const { validateBody, schemas } = require("../middlewares/validation.middleware");
 
 /**
  * @route POST /api/workflow-step
@@ -12,7 +12,7 @@ const roleMiddleware = require("../middlewares/role.middleware");
 workflowStepRouter.post(
     "/",
     authMiddleware.authUser,
-    roleMiddleware.authRoles("admin", "verifier"),
+    validateBody(schemas.workflowStepCreate),
     workflowStepController.createWorkflowStepController
 );
 
@@ -25,7 +25,6 @@ workflowStepRouter.post(
 workflowStepRouter.get(
     "/",
     authMiddleware.authUser,
-    roleMiddleware.authRoles("admin", "verifier"),
     workflowStepController.getWorkflowStepsController
 );
 
@@ -37,7 +36,6 @@ workflowStepRouter.get(
 workflowStepRouter.get(
     "/:id",
     authMiddleware.authUser,
-    roleMiddleware.authRoles("admin", "verifier"),
     workflowStepController.getWorkflowStepByIdController
 );
 
@@ -49,7 +47,7 @@ workflowStepRouter.get(
 workflowStepRouter.patch(
     "/:id",
     authMiddleware.authUser,
-    roleMiddleware.authRoles("admin", "verifier"),
+    validateBody(schemas.workflowStepUpdate),
     workflowStepController.updateWorkflowStepController
 );
 
@@ -61,7 +59,6 @@ workflowStepRouter.patch(
 workflowStepRouter.delete(
     "/:id",
     authMiddleware.authUser,
-    roleMiddleware.authRoles("admin"),
     workflowStepController.deleteWorkflowStepController
 );
 

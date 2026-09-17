@@ -12,7 +12,10 @@ async function approveController(req, res) {
     }
 
     try {
-        const document = await verifierService.approve(documentId);
+        const document = await verifierService.approve(
+            documentId,
+            req.user.id
+        );
 
         return res.status(200).json({
             success: true,
@@ -63,7 +66,7 @@ async function getVerificationRequestController(req, res) {
             request
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         });
@@ -109,7 +112,7 @@ async function viewDocumentController(req, res) {
         const { documentId } = req.params;
 
         const filePath =
-            await verificationDocumentService.viewDocument(documentId);
+            await verificationDocumentService.viewDocument(documentId, req.user.id);
 
         const absolutePath = path.resolve(filePath);
 
@@ -125,7 +128,7 @@ async function viewDocumentController(req, res) {
             });
         }
 
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
             message: "Unable to view document."
         });

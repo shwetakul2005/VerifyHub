@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { getAllRequests } from "../../api/applicant.api";
 import { useNavigate } from "react-router";
+import { getRequestStatusMeta } from "./requestStatus";
 // import { Navigate } from "react-router";
 
 function Dashboard() {
@@ -63,39 +64,52 @@ function Dashboard() {
             {verificationRequests.length === 0 ? (
                 <p>No verification requests found.</p>
             ) : (
-                verificationRequests.map((request) => (
-                    <section key={request._id}>
-                        <h2>
-                            {request.organization?.name}
-                        </h2>
+                verificationRequests.map((request) => {
+                    const statusMeta = getRequestStatusMeta(request);
 
-                        <p>
-                            <strong>Workflow:</strong>{" "}
-                            {request.workflowTemplate?.name}
-                        </p>
+                    return (
+                        <section key={request._id}>
+                            <h2>
+                                {request.organization?.name}
+                            </h2>
 
-                        <p>
-                            <strong>Status:</strong>{" "}
-                            {request.status}
-                        </p>
+                            <p>
+                                <strong>Workflow:</strong>{" "}
+                                {request.workflowTemplate?.name}
+                            </p>
 
-                        <p>
-                            <strong>Current Step:</strong>{" "}
-                            {request.currentStep?.title}
-                        </p>
+                            <p>
+                                <strong>Status:</strong>{" "}
+                                {request.status}
+                            </p>
 
-                        <p>
-                            <strong>Step Type:</strong>{" "}
-                            {request.currentStep?.stepType}
-                        </p>
+                            {request.currentStep ? (
+                                <>
+                                    <p>
+                                        <strong>Current Step:</strong>{" "}
+                                        {request.currentStep?.title}
+                                    </p>
 
-                        <button onClick = {() => navigate(`/dashboard/request/${request._id}`)}>
-                            View Request
-                        </button>
+                                    <p>
+                                        <strong>Step Type:</strong>{" "}
+                                        {request.currentStep?.stepType}
+                                    </p>
+                                </>
+                            ) : (
+                                <p>
+                                    <strong>Current Step:</strong>{" "}
+                                    {statusMeta.isCompleted ? "Workflow completed" : "No active step"}
+                                </p>
+                            )}
 
-                        <hr />
-                    </section>
-                ))
+                            <button onClick = {() => navigate(`/dashboard/request/${request._id}`)}>
+                                View Request
+                            </button>
+
+                            <hr />
+                        </section>
+                    );
+                })
             )}
         </main>
     );

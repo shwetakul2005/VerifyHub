@@ -22,6 +22,11 @@ export const getReqById = async (id) => {
     return response.data.verificationRequest;
 };
 
+export const getApplicantWorkflow = async (requestId) => {
+    const response = await api.get(`/verification-requests/${requestId}/flow`);
+    return response.data.result;
+};
+
 export const uploadVerificationDocument = async (
     requestId,
     file,
@@ -55,4 +60,22 @@ export const verifyEmailToken = async (token) => {
 export const getDocuments = async (requestId) => {
     const response = await api.get(`/verification-requests/${requestId}/documents`);
     return response.data.documents;
+};
+
+export const submitFaceVerification = async (requestId, documentFile, liveFile) => {
+    const formData = new FormData();
+    formData.append("document", documentFile);
+    formData.append("live", liveFile);
+
+    const response = await api.post(
+        `/verification-requests/${requestId}/face-verification`,
+        formData,
+        {
+            headers: {
+                "Content-Type": "multipart/form-data"
+            }
+        }
+    );
+
+    return response.data;
 };

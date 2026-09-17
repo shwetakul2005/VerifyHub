@@ -3,6 +3,7 @@ const verifierRouter = express.Router();
 const authMiddleware = require("../middlewares/auth.middleware");
 const roleMiddleware = require("../middlewares/role.middleware");
 const verifierController = require("../controllers/verifier.controller");
+const { validateBody, schemas } = require("../middlewares/validation.middleware");
 
 /**
  * @route POST /verifier/documents/:id/approve
@@ -16,7 +17,7 @@ verifierRouter.post("/documents/:id/approve", authMiddleware.authUser, roleMiddl
  * @description reject the document
  * @access Private
  */
-verifierRouter.post("/documents/:id/reject", authMiddleware.authUser, roleMiddleware.authRoles("verifier"), verifierController.rejectController)
+verifierRouter.post("/documents/:id/reject", authMiddleware.authUser, roleMiddleware.authRoles("verifier"), validateBody(schemas.documentReject), verifierController.rejectController)
 
 /**
  * @route GET /verifier/pending
@@ -38,7 +39,7 @@ verifierRouter.get("/request/:id", authMiddleware.authUser, roleMiddleware.authR
  * @description view the uploaded file
  * @access Private
  */
-verifierRouter.get("/documents/:documentId/file", authMiddleware.authUser, roleMiddleware.authRoles("verifier", "admin"), verifierController.viewDocumentController);
+verifierRouter.get("/documents/:documentId/file", authMiddleware.authUser, verifierController.viewDocumentController);
 
 
 

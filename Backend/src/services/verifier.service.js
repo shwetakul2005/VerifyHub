@@ -1,15 +1,31 @@
-const VerificationDocumentModel = require("../models/verification-document.model");
 const VerificationDocument = require("../models/verification-document.model");
 const VerificationRequest = require("../models/verification-request.model");
-const verificationStepExecutionModel = require("../models/verification-step-execution.model");
 const VerificationStepExecution = require("../models/verification-step-execution.model");
 const workflowEngineService = require("./workflow-engine.service");
+const {
+    findMembership,
+    idEquals,
+    requireDocumentReviewer,
+    requireRequestAccess
+} = require("./authorization.service");
 
 async function approve(documentId, verifierId) {
-    const document = await VerificationDocument.findById(documentId);
+    const { document } = await requireDocumentReviewer(verifierId, documentId);
 
-    if (!document) {
-        throw new Error("Document not found.");
+    if (document.reviewStatus !== "pending") {
+        throw new Error("Document has already been reviewed.");
+    }
+
+    const execution = await VerificationStepExecution.findOne({
+        verificationRequest: document.verificationRequest._id,
+        workflowStep: document.workflowStep,
+        status: "in_progress"
+    });
+
+    if (!execution) {
+        throw new Error(
+            "Verification step execution not found."
+        );
     }
 
     document.reviewStatus = "approved";
@@ -17,19 +33,6 @@ async function approve(documentId, verifierId) {
     document.reviewedAt = new Date();
 
     await document.save();
-    const execution = await VerificationStepExecution.findOne({
-        verificationRequest: document.verificationRequest,
-        workflowStep: document.workflowStep,
-        status: "in_progress"
-    });
-    
-
-    if (!execution) {
-        throw new Error(
-            "Verification step execution not found."
-        );
-    }
-    
     execution.status = "completed";
     execution.completedAt = new Date();
     
@@ -55,16 +58,20 @@ async function approve(documentId, verifierId) {
 }
 
 async function reject(documentId, verifierId, rejectionReason) {
-    const document = await VerificationDocument.findById(documentId);
+    const { document } = await requireDocumentReviewer(verifierId, documentId);
 
-    if (!document) {
-        throw new Error("Document not found.");
+    if (document.reviewStatus !== "pending") {
+        throw new Error("Document has already been reviewed.");
+    }
+
+    if (!rejectionReason || !rejectionReason.trim()) {
+        throw new Error("A rejection reason is required.");
     }
 
     document.reviewStatus = "rejected";
     document.reviewedBy = verifierId;
     document.reviewedAt = new Date();
-    document.rejectionReason = rejectionReason;
+    document.rejectionReason = rejectionReason.trim();
 
     await document.save();
 
@@ -91,7 +98,7 @@ async function reject(documentId, verifierId, rejectionReason) {
 }
 
 async function getPendingDocuments(verifierId) {
-    const documents = await VerificationDocumentModel.find({
+    const documents = await VerificationDocument.find({
         reviewStatus: "pending"
     })
     .populate({
@@ -117,25 +124,26 @@ async function getPendingDocuments(verifierId) {
 
             return (
                 request &&
+                request.organization &&
+                findMembership(request.organization, verifierId)?.role === "verifier" &&
                 request.workflowTemplate &&
-                request.workflowTemplate.assignedVerifier.equals(verifierId)
+                idEquals(request.workflowTemplate.assignedVerifier, verifierId)
             );
     });
     
 }
 
 async function getVerificationRequest(requestId, verifierId) {
+    await requireRequestAccess(verifierId, requestId, {
+        organizationRoles: ["verifier"],
+        requireAssignedVerifier: true
+    });
+
     const request = await VerificationRequest.findById(requestId)
         .populate("organization")
         .populate("workflowTemplate")
         .populate("applicant")
         .populate("currentStep");
-    console.log(request.workflowTemplate.assignedVerifier._id.toString());
-    console.log(verifierId);
-    if(request.workflowTemplate.assignedVerifier._id.toString() !== verifierId){
-        throw new Error("You can't access this resource.")   
-    }
-
     if (!request) {
         throw new Error("Verification request not found.");
     }

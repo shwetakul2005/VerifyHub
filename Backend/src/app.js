@@ -1,18 +1,38 @@
 const express = require("express");
 const cookieParser = require("cookie-parser")
 const cors = require("cors")
+const helmet = require("helmet");
+const { rateLimit } = require("express-rate-limit");
 // creates a backend express application
 const app = express();
+app.disable("x-powered-by");
+app.use(helmet());
+app.use(rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: { success: false, message: "Too many requests. Please try again later." }
+}));
+
+const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim());
 
 app.use(
     cors({
-        origin: "http://localhost:5173",
+        origin(origin, callback) {
+            if (!origin || allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+            return callback(new Error("Origin is not allowed by CORS."));
+        },
         credentials: true
     })
 );
 
 // converts incoming request body to JSON format
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 // importing all the auth routes
@@ -47,6 +67,30 @@ app.use("/api/email", emailVerificationRouter);
 
 const verifierRouter = require("./routes/verifier.routes");
 app.use("/api/verifier", verifierRouter);
+
+app.get("/api/health", (req, res) => {
+    res.status(200).json({ success: true, status: "ok" });
+});
+
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        message: "Route not found."
+    });
+});
+
+app.use((err, req, res, next) => {
+    const statusCode = err.statusCode || (err.name === "MulterError" ? 400 : 500);
+    const message = statusCode >= 500
+        ? "An unexpected server error occurred."
+        : err.message;
+
+    if (statusCode >= 500) {
+        console.error(err);
+    }
+
+    res.status(statusCode).json({ success: false, message });
+});
 
 
 module.exports = app;

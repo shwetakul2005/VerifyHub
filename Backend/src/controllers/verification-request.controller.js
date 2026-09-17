@@ -4,7 +4,7 @@ async function createVerificationRequestController(req, res) {
     const data = req.body;
 
     try {
-        const verificationRequest = await verificationRequestServices.createVerificationRequest(data);
+        const verificationRequest = await verificationRequestServices.createVerificationRequest(data, req.user.id);
 
         return res.status(201).json({
             success: true,
@@ -12,7 +12,7 @@ async function createVerificationRequestController(req, res) {
             verificationRequest
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         });
@@ -29,13 +29,19 @@ async function progressRequestController(req,res) {
         })
     }
 
-    const result = await verificationRequestServices.progressRequestController(requestId);
-
-    return res.status(200).json({
-        success: true,
-        message: "Fetched verification flow status.",
-        result
-    })
+    try {
+        const result = await verificationRequestServices.getRequestProgress(requestId, req.user.id);
+        return res.status(200).json({
+            success: true,
+            message: "Fetched verification flow status.",
+            result
+        });
+    } catch (err) {
+        return res.status(err.statusCode || 400).json({
+            success: false,
+            message: err.message
+        });
+    }
 }
 
 // get verification request by id of the organization
@@ -43,7 +49,7 @@ async function getVerificationRequestsOrgController(req, res) {
     const { organizationId } = req.query;
     // console.log(organizationId);
     try {
-        const verificationRequests = await verificationRequestServices.getVerificationRequests(organizationId);
+        const verificationRequests = await verificationRequestServices.getVerificationRequests(organizationId, req.user.id);
 
         return res.status(200).json({
             success: true,
@@ -63,7 +69,7 @@ async function getVerificationRequestByIdController(req, res) {
     const requestId = req.params.id;
 
     try {
-        const verificationRequest = await verificationRequestServices.getVerificationRequestById(requestId);
+        const verificationRequest = await verificationRequestServices.getVerificationRequestById(requestId, req.user.id);
 
         return res.status(200).json({
             success: true,
@@ -71,46 +77,52 @@ async function getVerificationRequestByIdController(req, res) {
             verificationRequest
         });
     } catch (err) {
-        return res.status(404).json({
+        return res.status(err.statusCode || 404).json({
             success: false,
             message: err.message
         });
     }
 }
 
-async function updateVerificationRequestController(req, res) {
-    const requestId = req.params.id;
-    const data = req.body;
+async function getApplicantWorkflowController(req, res) {
+    const requestId = req.params.requestId;
+    const userId = req.user.id;
 
     try {
-        const verificationRequest = await verificationRequestServices.updateVerificationRequest(requestId, data);
+        const workflow = await verificationRequestServices.getApplicantWorkflowByRequestId(requestId, userId);
 
         return res.status(200).json({
             success: true,
-            message: "Verification request updated successfully.",
-            verificationRequest
+            message: "Applicant verification workflow fetched successfully.",
+            result: workflow
+        });
+    } catch (err) {
+        const statusCode = err.message === "Verification request not found." ? 404 : 403;
+
+        return res.status(statusCode).json({
+            success: false,
+            message: err.message
+        });
+    }
+}
+
+async function submitFaceVerificationController(req, res) {
+    const requestId = req.params.requestId;
+    const applicantId = req.user.id;
+    const files = req.files || {};
+
+    try {
+        const result = await verificationRequestServices.submitFaceVerificationStep(requestId, applicantId, files);
+
+        return res.status(result.success ? 200 : 400).json({
+            success: result.success,
+            message: result.message,
+            result: result.result,
+            execution: result.execution,
+            verificationRequest: result.verificationRequest || null
         });
     } catch (err) {
         return res.status(400).json({
-            success: false,
-            message: err.message
-        });
-    }
-}
-
-async function deleteVerificationRequestController(req, res) {
-    const requestId = req.params.id;
-
-    try {
-        const verificationRequest = await verificationRequestServices.deleteVerificationRequest(requestId);
-
-        return res.status(200).json({
-            success: true,
-            message: "Verification request deleted successfully.",
-            verificationRequest
-        });
-    } catch (err) {
-        return res.status(404).json({
             success: false,
             message: err.message
         });
@@ -141,8 +153,8 @@ module.exports = {
     createVerificationRequestController,
     getVerificationRequestsOrgController,
     getVerificationRequestByIdController,
-    updateVerificationRequestController,
-    deleteVerificationRequestController,
+    getApplicantWorkflowController,
     progressRequestController,
-    getVerificationRequestByUserIdController
+    getVerificationRequestByUserIdController,
+    submitFaceVerificationController
 };

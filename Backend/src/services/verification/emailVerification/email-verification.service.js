@@ -124,8 +124,8 @@ async function execute(verificationRequest) {
 
     return {
         success: true,
-        completed: true,
-        message: "Verification email sent."
+        completed: false,
+        message: "Verification email sent. Waiting for the applicant to verify it."
     };
 }
 

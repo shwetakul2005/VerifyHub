@@ -18,6 +18,40 @@ const organizationSchema = new mongoose.Schema({
         enum: ["active", "suspended"],
         default: "active"
     },
+    admin: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+    }],
+    members: [{
+        user: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            required: true
+        },
+        role: {
+            type: String,
+            enum: ["org_admin", "verifier", "analyst"],
+            default: "verifier"
+        },
+        joinedAt: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+    settings: {
+        allowedStepTypes: [{
+            type: String
+        }],
+        defaultVerifier: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User"
+        },
+        branding: {
+            logo: String,
+            primaryColor: String,
+            secondaryColor: String
+        }
+    }
 },
 {
     timestamps: true,
