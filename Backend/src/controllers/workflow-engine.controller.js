@@ -4,7 +4,7 @@ async function startVerificationController(req,res){
     const { requestId } = req.params;
     let verificationRequest;
     try{
-        verificationRequest = await workflowEngineService.startVerification(requestId);
+        verificationRequest = await workflowEngineService.startVerification(requestId, req.user.id);
     }catch(err){
         return res.status(400).json({
             success: false,
@@ -23,7 +23,7 @@ async function executeCurrentStepController(req,res){
     const { requestId } = req.params;
     let verificationRequest;
     try{
-        verificationRequest = await workflowEngineService.executeCurrentStep(requestId);
+        verificationRequest = await workflowEngineService.executeCurrentStep(requestId, req.user.id);
     }catch(err){
         return res.status(400).json({
             success: false,

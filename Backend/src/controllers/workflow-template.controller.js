@@ -4,10 +4,10 @@ async function createWorkflowTemplateController(req,res) {
     const data = req.body;
     let workflowTemplate;
     try{
-        workflowTemplate = await workflowTemplateServices.createWorkflowTemplate(data);
+        workflowTemplate = await workflowTemplateServices.createWorkflowTemplate(data, req.user.id);
     }
     catch(err){
-        return res.status(404).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         })
@@ -25,10 +25,10 @@ async function getWorkflowTemplatesController(req,res) {
     const { organizationId } = req.query;
     let workflowTemplates;
     try{
-        workflowTemplates = await workflowTemplateServices.getWorkflowTemplates(organizationId);
+        workflowTemplates = await workflowTemplateServices.getWorkflowTemplates(organizationId, req.user.id);
     }
     catch(err){
-        return res.status(404).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         })
@@ -46,10 +46,10 @@ async function getWorkflowTemplateByIdController(req,res) {
     const workflowTemplateId = req.params.id;
     let workflowTemplate;
     try{
-        workflowTemplate = await workflowTemplateServices.getWorkflowTemplateById(workflowTemplateId);
+        workflowTemplate = await workflowTemplateServices.getWorkflowTemplateById(workflowTemplateId, req.user.id);
     }
     catch(err){
-        return res.status(404).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         })
@@ -68,10 +68,10 @@ async function updateWorkflowTemplateController(req,res) {
     const data = req.body;
     let workflowTemplate;
     try{
-        workflowTemplate = await workflowTemplateServices.updateWorkflowTemplate(workflowTemplateId, data);
+        workflowTemplate = await workflowTemplateServices.updateWorkflowTemplate(workflowTemplateId, data, req.user.id);
     }
     catch(err){
-        return res.status(404).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         })
@@ -90,10 +90,10 @@ async function deleteWorkflowTemplateController(req,res) {
     const workflowTemplateId = req.params.id;
     let workflowTemplate;
     try{
-        workflowTemplate = await workflowTemplateServices.deleteWorkflowTemplate(workflowTemplateId);
+        workflowTemplate = await workflowTemplateServices.deleteWorkflowTemplate(workflowTemplateId, req.user.id);
     }
     catch(err){
-        return res.status(404).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         })
@@ -111,4 +111,4 @@ module.exports = {
             getWorkflowTemplatesController,
             getWorkflowTemplateByIdController,
             updateWorkflowTemplateController,
-            deleteWorkflowTemplateController}   
+            deleteWorkflowTemplateController}

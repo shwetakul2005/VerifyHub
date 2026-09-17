@@ -1,11 +1,7 @@
-const VerificationDocumentModel = require("../../../models/verification-document.model");
+const { requireDocumentAccess } = require("../../authorization.service");
 
-async function viewDocument(documentId) {
-    const document = await VerificationDocumentModel.findById(documentId);
-
-    if (!document) {
-        throw new Error("Document not found.");
-    }
+async function viewDocument(documentId, userId) {
+    const { document } = await requireDocumentAccess(userId, documentId);
 
     return document.filePath;
 }

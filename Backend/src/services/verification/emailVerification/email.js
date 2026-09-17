@@ -3,6 +3,8 @@ const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
+  disableFileAccess: true,
+  disableUrlAccess: true,
   auth: {
     type: 'OAuth2',
     user: process.env.GOOGLE_USER,
@@ -11,16 +13,6 @@ const transporter = nodemailer.createTransport({
     refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
   },
 });
-
-// Verify the connection configuration
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('Error connecting to email server:', error);
-  } else {
-    console.log('Email server is ready to send messages');
-  }
-});
-
 
 // Function to send email
 const sendEmail = async (to, subject, text, html) => {
@@ -33,10 +25,9 @@ const sendEmail = async (to, subject, text, html) => {
       html, // html body
     });
 
-    console.log('Message sent: %s', info.messageId);
+    return { messageId: info.messageId };
   } catch (error) {
-    console.error('Error sending email:', error);
-    throw ErrorEvent;
+    throw new Error(`Unable to send verification email: ${error.message}`);
   }
 };
 

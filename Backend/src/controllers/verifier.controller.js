@@ -112,7 +112,7 @@ async function viewDocumentController(req, res) {
         const { documentId } = req.params;
 
         const filePath =
-            await verificationDocumentService.viewDocument(documentId);
+            await verificationDocumentService.viewDocument(documentId, req.user.id);
 
         const absolutePath = path.resolve(filePath);
 
@@ -128,7 +128,7 @@ async function viewDocumentController(req, res) {
             });
         }
 
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
             message: "Unable to view document."
         });

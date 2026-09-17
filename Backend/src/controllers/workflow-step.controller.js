@@ -4,7 +4,7 @@ async function createWorkflowStepController(req, res) {
     const data = req.body;
 
     try {
-        const workflowStep = await workflowStepServices.createWorkflowStep(data);
+        const workflowStep = await workflowStepServices.createWorkflowStep(data, req.user.id);
 
         return res.status(201).json({
             success: true,
@@ -12,7 +12,7 @@ async function createWorkflowStepController(req, res) {
             workflowStep
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         });
@@ -23,7 +23,7 @@ async function getWorkflowStepsController(req, res) {
     const { workflowTemplateId } = req.query;
 
     try {
-        const workflowSteps = await workflowStepServices.getWorkflowSteps(workflowTemplateId);
+        const workflowSteps = await workflowStepServices.getWorkflowSteps(workflowTemplateId, req.user.id);
 
         return res.status(200).json({
             success: true,
@@ -31,7 +31,7 @@ async function getWorkflowStepsController(req, res) {
             workflowSteps
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         });
@@ -42,7 +42,7 @@ async function getWorkflowStepByIdController(req, res) {
     const stepId = req.params.id;
 
     try {
-        const workflowStep = await workflowStepServices.getWorkflowStepById(stepId);
+        const workflowStep = await workflowStepServices.getWorkflowStepById(stepId, req.user.id);
 
         return res.status(200).json({
             success: true,
@@ -50,7 +50,7 @@ async function getWorkflowStepByIdController(req, res) {
             workflowStep
         });
     } catch (err) {
-        return res.status(404).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         });
@@ -62,7 +62,7 @@ async function updateWorkflowStepController(req, res) {
     const data = req.body;
 
     try {
-        const workflowStep = await workflowStepServices.updateWorkflowStep(stepId, data);
+        const workflowStep = await workflowStepServices.updateWorkflowStep(stepId, data, req.user.id);
 
         return res.status(200).json({
             success: true,
@@ -70,7 +70,7 @@ async function updateWorkflowStepController(req, res) {
             workflowStep
         });
     } catch (err) {
-        return res.status(400).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         });
@@ -81,7 +81,7 @@ async function deleteWorkflowStepController(req, res) {
     const stepId = req.params.id;
 
     try {
-        const workflowStep = await workflowStepServices.deleteWorkflowStep(stepId);
+        const workflowStep = await workflowStepServices.deleteWorkflowStep(stepId, req.user.id);
 
         return res.status(200).json({
             success: true,
@@ -89,7 +89,7 @@ async function deleteWorkflowStepController(req, res) {
             workflowStep
         });
     } catch (err) {
-        return res.status(404).json({
+        return res.status(err.statusCode || 400).json({
             success: false,
             message: err.message
         });

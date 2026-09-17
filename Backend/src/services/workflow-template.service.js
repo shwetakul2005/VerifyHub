@@ -1,16 +1,21 @@
-const OrganizationModel = require("../models/organization.model");
 const workflowTemplateModel = require("../models/workflow-template.model");
 const UserModel = require("../models/user.model");
-async function createWorkflowTemplate(data){
+const {
+    requireOrganizationRole,
+    requireWorkflowRole,
+    idEquals
+} = require("./authorization.service");
+
+async function createWorkflowTemplate(data, actorId){
     
    const {
         name,
         organization,
         description,
-        status,
-        createdBy,
         assignedVerifier
         } = data;
+
+    await requireOrganizationRole(actorId, organization, ["org_admin"]);
 
     const existingWorkflow = await workflowTemplateModel.findOne({name, organization});
 
@@ -27,35 +32,55 @@ async function createWorkflowTemplate(data){
         throw new Error("Invalid verifier selected.");
     }
 
-    const createdWorkflow = await workflowTemplateModel.create(data);
+    const verifierAccess = await requireOrganizationRole(
+        assignedVerifier,
+        organization,
+        ["verifier"]
+    );
+
+    if (!idEquals(verifierAccess.membership.user, assignedVerifier)) {
+        throw new Error("Selected verifier does not belong to this organization.");
+    }
+
+    const createdWorkflow = await workflowTemplateModel.create({
+        ...data,
+        createdBy: actorId,
+        status: "draft"
+    });
     return createdWorkflow;
 
 }
 
 
-async function getWorkflowTemplates(organizationId)
+async function getWorkflowTemplates(organizationId, actorId)
 {
+    await requireOrganizationRole(
+        actorId,
+        organizationId,
+        ["org_admin", "verifier", "analyst"]
+    );
     const allWorkflows = await workflowTemplateModel.find({organization:organizationId});
     return allWorkflows;
 }
 
-async function getWorkflowTemplateById(id)
+async function getWorkflowTemplateById(id, actorId)
 {
-    const allWorkflows = await workflowTemplateModel.findById(id);
-    if (!allWorkflows) {
-        throw new Error("Workflow template not found.");
-    }
-    return allWorkflows;
+    const { workflow } = await requireWorkflowRole(
+        actorId,
+        id,
+        ["org_admin", "verifier", "analyst"]
+    );
+    return workflow;
 }
 
-async function updateWorkflowTemplate(workflowId, data) {
+async function updateWorkflowTemplate(workflowId, data, actorId) {
     const { name, description, status } = data;
 
-    const workflow = await workflowTemplateModel.findById(workflowId);
-
-    if (!workflow) {
-        throw new Error("Workflow template not found.");
-    }
+    const { workflow } = await requireWorkflowRole(
+        actorId,
+        workflowId,
+        ["org_admin"]
+    );
 
     // Prevent duplicate workflow names within the same organization
     if (name && name !== workflow.name) {
@@ -84,12 +109,9 @@ async function updateWorkflowTemplate(workflowId, data) {
     return workflow;
 }
 
-async function deleteWorkflowTemplate(id)
+async function deleteWorkflowTemplate(id, actorId)
 {
-    const workflow = await workflowTemplateModel.findById(id);
-    if(!workflow){
-        throw new Error("Workflow template not found.");
-    }
+    const { workflow } = await requireWorkflowRole(actorId, id, ["org_admin"]);
 
     await workflow.deleteOne();
     return workflow;

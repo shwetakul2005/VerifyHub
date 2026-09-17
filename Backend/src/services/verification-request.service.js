@@ -1,19 +1,19 @@
 const verificationRequestModel = require("../models/verification-request.model");
-const organizationModel = require("../models/organization.model");
 const workflowTemplateModel = require("../models/workflow-template.model");
 const workflowStepModel = require("../models/workflow-step.model");
 const userModel = require("../models/user.model");
 const VerificationStepExecutionModel = require("../models/verification-step-execution.model");
 const faceVerificationService = require("./verification/faceVerification/face-verification.service");
+const {
+    requireOrganizationRole,
+    requireRequestAccess
+} = require("./authorization.service");
 
-async function createVerificationRequest(data){
+async function createVerificationRequest(data, actorId){
     const {organization, workflowTemplate,
         applicant} = data;
 
-    const organizationExists = await organizationModel.findById(organization);
-    if(!organizationExists){
-        throw new Error("Organization dosen't exist.");
-    }
+    await requireOrganizationRole(actorId, organization, ["org_admin"]);
 
     const workflowTemplateExists = await workflowTemplateModel.findById(workflowTemplate);
     if(!workflowTemplateExists){
@@ -47,10 +47,24 @@ async function createVerificationRequest(data){
 
 }
 
-async function getVerificationRequests(organizationId){    
+async function getVerificationRequests(organizationId, actorId){
+    const { membership } = await requireOrganizationRole(
+        actorId,
+        organizationId,
+        ["org_admin", "verifier", "analyst"]
+    );
+
+    const query = { organization: organizationId };
+    if (membership.role === "verifier") {
+        const assignedWorkflows = await workflowTemplateModel.find({
+            organization: organizationId,
+            assignedVerifier: actorId
+        }).select("_id");
+        query.workflowTemplate = { $in: assignedWorkflows.map((workflow) => workflow._id) };
+    }
     
     const allData = await verificationRequestModel
-                            .find({organization: organizationId})
+                            .find(query)
                             .populate("applicant", "username email")
                             .populate("workflowTemplate", "name")
                             .populate("currentStep", "title stepOrder stepType");
@@ -58,7 +72,13 @@ async function getVerificationRequests(organizationId){
     return allData; 
 }
 
-async function getVerificationRequestById(requestId) {
+async function getVerificationRequestById(requestId, actorId) {
+    await requireRequestAccess(actorId, requestId, {
+        allowApplicant: true,
+        organizationRoles: ["org_admin", "verifier", "analyst"],
+        requireAssignedVerifier: true
+    });
+
     const verificationRequest = await verificationRequestModel
         .findById(requestId)
         .populate("organization")
@@ -79,7 +99,6 @@ async function getVerificationRequestByUserId(userId) {
     // if(!userExists){
     //     throw new Error("User does not exist.");
     // }
-    console.log(userId);
     const verificationRequests = await verificationRequestModel
         .find({applicant:userId})
         .populate("organization")
@@ -96,6 +115,8 @@ async function getVerificationRequestByUserId(userId) {
 }
 
 async function getApplicantWorkflowByRequestId(requestId, userId) {
+    await requireRequestAccess(userId, requestId, { allowApplicant: true });
+
     const verificationRequest = await verificationRequestModel
         .findById(requestId)
         .populate("workflowTemplate")
@@ -110,14 +131,9 @@ async function getApplicantWorkflowByRequestId(requestId, userId) {
         ? verificationRequest.applicant._id.toString()
         : verificationRequest.applicant?.toString();
     
-    console.log(`request applicant Id is ${requestApplicantId}`);
-    console.log(`user id is ${userId}`);
-
-
     if (requestApplicantId !== String(userId)) {
         throw new Error("You are not allowed to access this verification workflow.");
     }
-    console.log(`everything fine till here!!`)
     const workflowSteps = await workflowStepModel
         .find({
             workflowTemplate: verificationRequest.workflowTemplate._id,
@@ -207,51 +223,18 @@ async function getApplicantWorkflowByRequestId(requestId, userId) {
     };
 }
 
-async function updateVerificationRequest(requestId, data) {
-    const { status, currentStep, completedAt } = data;
-
-    const verificationRequest = await verificationRequestModel.findById(requestId);
-
-    if (!verificationRequest) {
-        throw new Error("Verification request not found.");
-    }
-
-    if (status !== undefined) {
-        verificationRequest.status = status;
-    }
-
-    if (currentStep !== undefined) {
-        verificationRequest.currentStep = currentStep;
-    }
-
-    if (completedAt !== undefined) {
-        verificationRequest.completedAt = completedAt;
-    }
-
-    await verificationRequest.save();
-
-    return verificationRequest;
-}
-
-async function deleteVerificationRequest(requestId) {
-    const verificationRequest = await verificationRequestModel.findById(requestId);
-
-    if (!verificationRequest) {
-        throw new Error("Verification request not found.");
-    }
-
-    await verificationRequest.deleteOne();
-
-    return verificationRequest;
-}
-
 async function submitFaceVerificationStep(requestId, applicantId, files) {
     return await faceVerificationService.submitFaceVerificationStep(requestId, applicantId, files);
 }
 
-async function progressRequestController(requestId){
+async function getRequestProgress(requestId, actorId){
+    await requireRequestAccess(actorId, requestId, {
+        allowApplicant: true,
+        organizationRoles: ["org_admin", "verifier", "analyst"],
+        requireAssignedVerifier: true
+    });
+
     const verificationRequest = await verificationRequestModel.findById(requestId).populate("currentStep").populate("workflowTemplate");
-    const {status} = verificationRequest;
     const {currentStep, workflowTemplate} = verificationRequest;
     const steps = await workflowStepModel.find({
         workflowTemplate: workflowTemplate
@@ -263,10 +246,13 @@ async function progressRequestController(requestId){
 
         let status;
 
-        if (step.stepOrder < currentStep.stepOrder || verificationRequest.status === "completed") {
+        if (verificationRequest.status === "completed") {
             status = "completed";
         }
-        else if (step.stepOrder === currentStep.stepOrder) {
+        else if (currentStep && step.stepOrder < currentStep.stepOrder) {
+            status = "completed";
+        }
+        else if (currentStep && step.stepOrder === currentStep.stepOrder) {
             status = "in_progress";
         }
         else {
@@ -286,11 +272,11 @@ async function progressRequestController(requestId){
         overallStatus: verificationRequest.status,
 
         
-        currentStep: {
-            id: verificationRequest.currentStep._id,
-            title: verificationRequest.currentStep.title,
-            stepOrder: verificationRequest.currentStep.stepOrder
-        },
+        currentStep: currentStep ? {
+            id: currentStep._id,
+            title: currentStep.title,
+            stepOrder: currentStep.stepOrder
+        } : null,
 
         progress: progress
     };
@@ -300,9 +286,8 @@ module.exports = {createVerificationRequest,
                     getVerificationRequests,
                     getVerificationRequestById,
                     getApplicantWorkflowByRequestId,
-                    updateVerificationRequest,
-                    deleteVerificationRequest,
     submitFaceVerificationStep,
-                    getVerificationRequestByUserId
+                    getVerificationRequestByUserId,
+                    getRequestProgress
                 };
 

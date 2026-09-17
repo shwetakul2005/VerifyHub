@@ -1,13 +1,13 @@
 const workflowStepModel = require("../models/workflow-step.model");
-const workflowTemplateModel = require("../models/workflow-template.model");
+const {
+    requireWorkflowRole,
+    requireWorkflowStepRole
+} = require("./authorization.service");
 
-async function createWorkflowStep(data){
+async function createWorkflowStep(data, actorId){
     const {workflowTemplate,stepOrder } = data;
     
-    const findTemplateById = await workflowTemplateModel.findById(workflowTemplate);
-    if(!findTemplateById){
-        throw new Error("Workflow template not valid.");
-    }
+    await requireWorkflowRole(actorId, workflowTemplate, ["org_admin"]);
     const isAlreadyStepExists = await workflowStepModel.findOne({workflowTemplate,stepOrder})
 
     if(isAlreadyStepExists){
@@ -18,28 +18,33 @@ async function createWorkflowStep(data){
     return newStep;
 }
 
-async function getWorkflowSteps(workflowTemplateId){
+async function getWorkflowSteps(workflowTemplateId, actorId){
+    await requireWorkflowRole(
+        actorId,
+        workflowTemplateId,
+        ["org_admin", "verifier", "analyst"]
+    );
     const allWorkflowSteps = await workflowStepModel
     .find({workflowTemplate:workflowTemplateId})
     .sort({stepOrder: 1});
     return allWorkflowSteps;
 }
 
-async function getWorkflowStepById(stepId){
-    const step = await workflowStepModel.findById(stepId);
-    if (!step) {
-        throw new Error("Workflow step not found.");
-    }
+async function getWorkflowStepById(stepId, actorId){
+    const { step } = await requireWorkflowStepRole(
+        actorId,
+        stepId,
+        ["org_admin", "verifier", "analyst"]
+    );
     return step;
 }
 
-async function updateWorkflowStep(stepId, data){
-
-    const workflowStep = await workflowStepModel.findById(stepId);
-
-    if (!workflowStep) {
-        throw new Error("Workflow step not found.");
-    }
+async function updateWorkflowStep(stepId, data, actorId){
+    const { step: workflowStep } = await requireWorkflowStepRole(
+        actorId,
+        stepId,
+        ["org_admin"]
+    );
 
     const title = data.title ?? workflowStep.title;
     const description = data.description ?? workflowStep.description;
@@ -88,11 +93,12 @@ async function updateWorkflowStep(stepId, data){
     return workflowStep;
 }
 
-async function deleteWorkflowStep(stepId){
-    const workflowStep = await workflowStepModel.findById(stepId);
-    if(!workflowStep){
-        throw new Error("Workflow step not found.");
-    }
+async function deleteWorkflowStep(stepId, actorId){
+    const { step: workflowStep } = await requireWorkflowStepRole(
+        actorId,
+        stepId,
+        ["org_admin"]
+    );
 
     await workflowStep.deleteOne();
     return workflowStep;
