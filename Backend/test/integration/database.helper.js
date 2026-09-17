@@ -1,15 +1,17 @@
 const mongoose = require("mongoose");
-const { MongoMemoryServer } = require("mongodb-memory-server");
+const { MongoMemoryReplSet } = require("mongodb-memory-server");
 
-let mongoServer;
+let mongoReplicaSet;
 
 async function startDatabase() {
-    mongoServer = await MongoMemoryServer.create({
-        instance: { dbName: "verifyhub-integration" }
+    mongoReplicaSet = await MongoMemoryReplSet.create({
+        replSet: {
+            count: 1,
+            dbName: "verifyhub-integration",
+            storageEngine: "wiredTiger"
+        }
     });
-    await mongoose.connect(mongoServer.getUri(), {
-        dbName: "verifyhub-integration"
-    });
+    await mongoose.connect(mongoReplicaSet.getUri());
 }
 
 async function clearDatabase() {
@@ -19,9 +21,9 @@ async function clearDatabase() {
 
 async function stopDatabase() {
     await mongoose.disconnect();
-    if (mongoServer) {
-        await mongoServer.stop();
-        mongoServer = undefined;
+    if (mongoReplicaSet) {
+        await mongoReplicaSet.stop();
+        mongoReplicaSet = undefined;
     }
 }
 
