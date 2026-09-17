@@ -5,6 +5,7 @@ const userModel = require("../models/user.model");
 const VerificationStepExecutionModel = require("../models/verification-step-execution.model");
 const faceVerificationService = require("./verification/faceVerification/face-verification.service");
 const {
+    AccessError,
     requireOrganizationRole,
     requireRequestAccess
 } = require("./authorization.service");
@@ -228,36 +229,43 @@ async function submitFaceVerificationStep(requestId, applicantId, files) {
 }
 
 async function getRequestProgress(requestId, actorId){
-    await requireRequestAccess(actorId, requestId, {
+    const { request: verificationRequest } = await requireRequestAccess(actorId, requestId, {
         allowApplicant: true,
         organizationRoles: ["org_admin", "verifier", "analyst"],
         requireAssignedVerifier: true
     });
 
-    const verificationRequest = await verificationRequestModel.findById(requestId).populate("currentStep").populate("workflowTemplate");
+    await verificationRequest.populate("currentStep");
     const {currentStep, workflowTemplate} = verificationRequest;
+
+    if (!workflowTemplate) {
+        throw new AccessError("Workflow template not found.", 404);
+    }
+
     const steps = await workflowStepModel.find({
-        workflowTemplate: workflowTemplate
+        workflowTemplate: workflowTemplate._id
     }).sort({stepOrder: 1});
+
+    const executions = await VerificationStepExecutionModel.find({
+        verificationRequest: requestId
+    }).sort({ createdAt: 1 }).lean();
+    const executionByStep = new Map(
+        executions
+            .filter((execution) => execution.workflowStep)
+            .map((execution) => [execution.workflowStep.toString(), execution])
+    );
+    const currentStepId = currentStep?._id?.toString() || null;
 
     const progress = [];
 
     for (const step of steps) {
-
-        let status;
-
-        if (verificationRequest.status === "completed") {
-            status = "completed";
-        }
-        else if (currentStep && step.stepOrder < currentStep.stepOrder) {
-            status = "completed";
-        }
-        else if (currentStep && step.stepOrder === currentStep.stepOrder) {
-            status = "in_progress";
-        }
-        else {
-            status = "pending";
-        }
+        const execution = executionByStep.get(step._id.toString());
+        const status = execution?.status || (
+            verificationRequest.status === "in_progress" &&
+            currentStepId === step._id.toString()
+                ? "in_progress"
+                : "pending"
+        );
 
         progress.push({
             title: step.title,

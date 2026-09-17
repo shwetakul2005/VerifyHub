@@ -36,7 +36,6 @@ workflowStepRouter.get(
 workflowStepRouter.get(
     "/:id",
     authMiddleware.authUser,
-    validateBody(schemas.workflowStepUpdate),
     workflowStepController.getWorkflowStepByIdController
 );
 
@@ -48,6 +47,7 @@ workflowStepRouter.get(
 workflowStepRouter.patch(
     "/:id",
     authMiddleware.authUser,
+    validateBody(schemas.workflowStepUpdate),
     workflowStepController.updateWorkflowStepController
 );
 

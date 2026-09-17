@@ -23,7 +23,7 @@ async function progressRequestController(req,res) {
     const requestId = req.params.requestId;
 
     if(!requestId){
-        return res.status(err.statusCode || 400).json({
+        return res.status(400).json({
             success: false,
             message: "Request Id not recieved."
         })
