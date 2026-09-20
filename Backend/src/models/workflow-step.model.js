@@ -28,6 +28,8 @@ const workflowStepSchema = new mongoose.Schema({
         type: Boolean,
         default: true
     },
+    maxRetries: { type: Number, min: 0, default: 3 },
+    schemaVersion: { type: Number, default: 1 },
     status: {
         type: String,
         enum: ["active", "inactive"],
@@ -37,18 +39,25 @@ const workflowStepSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.Mixed,
         default: {},
         documentType: {
-        type: String,
-        enum: [
-            "Aadhaar",
-            "PAN",
-            "Passport",
-            "Driving License",
-            "Degree Certificate",
-            "Marksheet",
-            "Other"
-        ]
-    }
-    }
+            type: String,
+            enum: [
+                "Aadhaar",
+                "PAN",
+                "Passport",
+                "Driving License",
+                "Degree Certificate",
+                "Marksheet",
+                "Other"
+            ]
+        }
+    },
+    archivedAt: { type: Date, default: null },
+    archivedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null
+    },
+    archiveReason: { type: String, default: null }
 
 },
 {

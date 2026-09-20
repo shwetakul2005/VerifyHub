@@ -16,6 +16,12 @@ const auditLogSchema = new mongoose.Schema({
             "workflow_archived",
             "workflow_deleted",
             "workflow_cloned",
+            "workflow_version_created",
+            "request_created",
+            "request_transition",
+            "execution_transition",
+            "review_decision",
+            "request_archived",
             "step_added",
             "step_updated",
             "step_removed",
@@ -29,15 +35,24 @@ const auditLogSchema = new mongoose.Schema({
     actor: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
-        required: true
+        required() { return this.actorType !== "system"; }
     },
+    actorType: { type: String, enum: ["user", "system"], default: "user" },
     target: {
         type: mongoose.Schema.Types.ObjectId,
         refPath: "targetModel"
     },
     targetModel: {
         type: String,
-        enum: ["WorkflowTemplate", "WorkflowStep", "Organization", "User"]
+        enum: ["WorkflowTemplate", "WorkflowStep", "VerificationRequest", "VerificationStepExecution", "VerificationDocument", "Organization", "User"]
+    },
+    transition: {
+        fromState: String,
+        toState: String,
+        command: String,
+        reason: String,
+        correlationId: String,
+        idempotencyKey: String
     },
     details: {
         type: mongoose.Schema.Types.Mixed,
