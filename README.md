@@ -101,11 +101,4 @@ Backend integration tests use `mongodb-memory-server`, so their first run may do
 
 From `Backend/`, `npm run migrate:workflow` runs a **read-only preflight** by default. The `--apply` and `--install-indexes` modes require `--backup-confirmed`. On a real database, stop workflow writes, take and verify a backup, resolve every reported violation, and run the verification stage before installing indexes. The tooling has only been exercised against temporary test databases; it has not been run on project user data.
 
-## What remains before a resume-ready release
 
-1. Complete Phase 2's sequential, idempotent coordinator, immutable workflow publication, retries/cancellation, atomic reviews, archival, and audit events.
-2. Build the organization-admin workflow/invitation experience and finish the applicant/verifier UI against the intended design.
-3. Measure and document OCR and face-match behavior with reproducible synthetic evaluation data; never represent image-quality heuristics as genuine liveness detection.
-4. Add synthetic seed data, complete end-to-end tests, secure artifact storage, documented deployment, and a short repeatable demo.
-
-The release bar is a clean clone where a reviewer can start the services, use synthetic accounts, and complete the admin → applicant → verifier journey without manually editing MongoDB.
