@@ -19,6 +19,7 @@ process.env.GOOGLE_USER = "integration@example.com";
 const app = require("../../src/app");
 const Organization = require("../../src/models/organization.model");
 const User = require("../../src/models/user.model");
+const { installWorkflowIndexes } = require("../../src/migrations/workflow-migration");
 
 test.before(startDatabase);
 test.afterEach(clearDatabase);
@@ -87,9 +88,14 @@ test("tenant resources and verification requests cannot be read across access bo
         stepOrder: 1,
         stepType: "document",
         title: "Upload identity document",
+        config: { documentType: "PAN" },
         status: "active"
     });
     assert.equal(stepResponse.status, 201);
+
+    const publication = await adminA.agent.post(`/api/workflows/${workflow._id}/publish`);
+    assert.equal(publication.status, 200);
+    await installWorkflowIndexes();
 
     const verificationResponse = await adminA.agent
         .post("/api/verification-requests")

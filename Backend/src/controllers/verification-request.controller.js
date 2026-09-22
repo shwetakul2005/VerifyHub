@@ -12,9 +12,9 @@ async function createVerificationRequestController(req, res) {
             verificationRequest
         });
     } catch (err) {
-        return res.status(err.statusCode || 400).json({
+        return res.status(err.statusCode || 500).json({
             success: false,
-            message: err.message
+            message: err.statusCode ? err.message : "Unable to create verification request."
         });
     }
 }

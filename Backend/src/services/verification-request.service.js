@@ -3,7 +3,10 @@ const workflowTemplateModel = require("../models/workflow-template.model");
 const workflowStepModel = require("../models/workflow-step.model");
 const userModel = require("../models/user.model");
 const VerificationStepExecutionModel = require("../models/verification-step-execution.model");
+const AuditLogModel = require("../models/audit-log.model");
+const mongoose = require("mongoose");
 const faceVerificationService = require("./verification/faceVerification/face-verification.service");
+const { WorkflowDefinitionError } = require("../domain/workflow-definition");
 const {
     AccessError,
     requireOrganizationRole,
@@ -15,36 +18,113 @@ async function createVerificationRequest(data, actorId){
         applicant} = data;
 
     await requireOrganizationRole(actorId, organization, ["org_admin"]);
-
-    const workflowTemplateExists = await workflowTemplateModel.findById(workflowTemplate);
-    if(!workflowTemplateExists){
-        throw new Error("Workflow template dosen't exist.");
-    }
-
     const applicantExists = await userModel.findById(applicant);
     if(!applicantExists){
-        throw new Error("Applicant dosen't exist.");
+        throw new AccessError("Applicant doesn't exist.", 400);
     }
 
-    if(!workflowTemplateExists.organization.equals(organization)){
-        throw new Error("Worktemplate dosen't belong to your organization.")
-    }
-    
-    const activeStep = await workflowStepModel.findOne({workflowTemplate, status: "active"}).sort({ stepOrder: 1 });
-    if(!activeStep){
-        throw new Error("No active steps found.");
-    }
-    const verificationRequestData = {
+    const availableWorkflow = await workflowTemplateModel.exists({
+        _id: workflowTemplate,
         organization,
-        workflowTemplate,
-        applicant,
-        status: "pending",
-        currentStep: activeStep._id,
-        startedAt: new Date()
-    };
+        status: "published",
+        archivedAt: null
+    });
+    if (!availableWorkflow) {
+        throw new WorkflowDefinitionError("A request requires a published, non-archived workflow in this organization.");
+    }
 
-    const newReq = await verificationRequestModel.create(verificationRequestData);
-    return newReq;
+    const indexes = await VerificationStepExecutionModel.collection.listIndexes().toArray()
+        .catch((error) => {
+            if (error.code === 26) return [];
+            throw error;
+        });
+    const executionIndex = indexes.find((index) => index.name === "unique_request_step_execution");
+    if (!executionIndex?.unique ||
+        JSON.stringify(executionIndex.key) !== JSON.stringify({ verificationRequest: 1, workflowStep: 1 })) {
+        const error = new Error("Request creation is unavailable until the unique execution index is installed.");
+        error.statusCode = 503;
+        throw error;
+    }
+
+    const session = await mongoose.startSession();
+    let createdRequest;
+    try {
+        await session.withTransaction(async () => {
+            const workflow = await workflowTemplateModel.findOne({
+                _id: workflowTemplate,
+                organization,
+                status: "published",
+                archivedAt: null
+            }).session(session).lean();
+            if (!workflow) {
+                throw new WorkflowDefinitionError("A request requires a published, non-archived workflow in this organization.");
+            }
+            const steps = await workflowStepModel.find({
+                workflowTemplate,
+                status: "active",
+                archivedAt: null
+            }).sort({ stepOrder: 1 }).session(session).lean();
+            if (steps.length === 0) {
+                throw new WorkflowDefinitionError("Published workflow has no active steps.");
+            }
+            const snapshotSteps = steps.map((step) => ({
+                workflowStep: step._id,
+                stepOrder: step.stepOrder,
+                stepType: step.stepType,
+                title: step.title,
+                description: step.description,
+                isRequired: step.isRequired,
+                maxRetries: step.maxRetries,
+                config: step.config
+            }));
+            const [request] = await verificationRequestModel.create([{
+                organization,
+                workflowTemplate,
+                workflowVersion: workflow._id,
+                workflowSnapshot: {
+                    version: workflow.version,
+                    name: workflow.name,
+                    description: workflow.description,
+                    assignedVerifier: workflow.assignedVerifier,
+                    steps: snapshotSteps
+                },
+                applicant,
+                status: "pending",
+                currentStep: steps[0]._id,
+                startedAt: null,
+                schemaVersion: 2
+            }], { session });
+            createdRequest = request;
+            await VerificationStepExecutionModel.insertMany(snapshotSteps.map((step) => ({
+                verificationRequest: request._id,
+                workflowStep: step.workflowStep,
+                stepOrder: step.stepOrder,
+                stepSnapshot: {
+                    stepType: step.stepType,
+                    title: step.title,
+                    description: step.description,
+                    isRequired: step.isRequired,
+                    maxRetries: step.maxRetries,
+                    config: step.config
+                },
+                maxRetries: step.maxRetries,
+                status: "pending",
+                schemaVersion: 2
+            })), { session });
+            await AuditLogModel.create([{
+                organization,
+                action: "request_created",
+                actor: actorId,
+                actorType: "user",
+                target: request._id,
+                targetModel: "VerificationRequest",
+                transition: { toState: "pending", command: "create" }
+            }], { session });
+        });
+    } finally {
+        await session.endSession();
+    }
+    return createdRequest;
 
 }
 
