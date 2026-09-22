@@ -7,6 +7,7 @@
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "node --test test/*.test.js",
     "test:integration": "node --test --test-concurrency=1 test/integration/*.test.js",
+    "migrate:workflow": "node src/migrations/workflow-migration.cli.js",
     "dev": "npx nodemon server.js"
   },
   "keywords": [],
