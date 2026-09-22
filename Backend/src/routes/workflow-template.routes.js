@@ -18,6 +18,10 @@ workflowTemplateRoutes.post("/", authMiddleware.authUser, validateBody(schemas.w
  */
 workflowTemplateRoutes.get("/",authMiddleware.authUser, workflowTemplateController.getWorkflowTemplatesController)
 
+workflowTemplateRoutes.post("/:id/publish", authMiddleware.authUser, workflowTemplateController.publishWorkflowTemplateController)
+
+workflowTemplateRoutes.post("/:id/versions", authMiddleware.authUser, workflowTemplateController.createWorkflowVersionController)
+
 /**
  * @route GET /api/workflows/:id
  * @description Get a workflow using its id

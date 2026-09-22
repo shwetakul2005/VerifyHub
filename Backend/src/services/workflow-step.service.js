@@ -1,21 +1,44 @@
 const workflowStepModel = require("../models/workflow-step.model");
+const workflowTemplateModel = require("../models/workflow-template.model");
+const mongoose = require("mongoose");
 const {
     requireWorkflowRole,
     requireWorkflowStepRole
 } = require("./authorization.service");
+const { assertDraftWorkflow, WorkflowDefinitionError } = require("../domain/workflow-definition");
+
+async function mutateDraftStep(workflowId, mutation) {
+    const session = await mongoose.startSession();
+    let result;
+    try {
+        await session.withTransaction(async () => {
+            const claimed = await workflowTemplateModel.updateOne(
+                { _id: workflowId, status: "draft" },
+                { $inc: { definitionRevision: 1 } },
+                { session }
+            );
+            if (claimed.modifiedCount !== 1) {
+                throw new WorkflowDefinitionError("Workflow is no longer an editable draft.");
+            }
+            result = await mutation(session);
+        });
+        return result;
+    } finally {
+        await session.endSession();
+    }
+}
 
 async function createWorkflowStep(data, actorId){
     const {workflowTemplate,stepOrder } = data;
     
-    await requireWorkflowRole(actorId, workflowTemplate, ["org_admin"]);
-    const isAlreadyStepExists = await workflowStepModel.findOne({workflowTemplate,stepOrder})
-
-    if(isAlreadyStepExists){
-        throw new Error("A step with this order already exists in the workflow.")
-    }
-
-    const newStep = await workflowStepModel.create(data);
-    return newStep;
+    const { workflow } = await requireWorkflowRole(actorId, workflowTemplate, ["org_admin"]);
+    assertDraftWorkflow(workflow);
+    return mutateDraftStep(workflowTemplate, async (session) => {
+        const existing = await workflowStepModel.findOne({ workflowTemplate, stepOrder }).session(session);
+        if (existing) throw new WorkflowDefinitionError("A step with this order already exists in the workflow.");
+        const [created] = await workflowStepModel.create([data], { session });
+        return created;
+    });
 }
 
 async function getWorkflowSteps(workflowTemplateId, actorId){
@@ -40,68 +63,45 @@ async function getWorkflowStepById(stepId, actorId){
 }
 
 async function updateWorkflowStep(stepId, data, actorId){
-    const { step: workflowStep } = await requireWorkflowStepRole(
+    const { step: workflowStep, workflow } = await requireWorkflowStepRole(
         actorId,
         stepId,
         ["org_admin"]
     );
+    assertDraftWorkflow(workflow);
 
-    const title = data.title ?? workflowStep.title;
-    const description = data.description ?? workflowStep.description;
-    const status = data.status ?? workflowStep.status;
-    const stepOrder = data.stepOrder ?? workflowStep.stepOrder;
-    const isRequired = data.isRequired ?? workflowStep.isRequired;
-    const config = data.config ?? workflowStep.config;
-
-
-    // Prevent duplicate workflow names within the same organization
-    if (stepOrder && stepOrder !== workflowStep.stepOrder) {
-        const existingWorkflowStep = await workflowStepModel.findOne({
-            workflowTemplate: workflowStep.workflowTemplate,
-            stepOrder
-        });
-
-        if (existingWorkflowStep) {
-            throw new Error("Workflow step with this stepOrder already exists.");
+    return mutateDraftStep(workflowStep.workflowTemplate, async (session) => {
+        if (data.stepOrder !== undefined && data.stepOrder !== workflowStep.stepOrder) {
+            const existing = await workflowStepModel.findOne({
+                workflowTemplate: workflowStep.workflowTemplate,
+                stepOrder: data.stepOrder
+            }).session(session);
+            if (existing) {
+                throw new WorkflowDefinitionError("Workflow step with this stepOrder already exists.");
+            }
         }
-
-        workflowStep.stepOrder = stepOrder;
-    }
-
-    if (title !== undefined) {
-        workflowStep.title = title;
-    }
-
-    if (config !== undefined) {
-        workflowStep.config = config;
-    }
-
-    if (isRequired !== undefined) {
-        workflowStep.isRequired = isRequired;
-    }
-
-    if (description !== undefined) {
-        workflowStep.description = description;
-    }
-
-    if (status !== undefined) {
-        workflowStep.status = status;
-    }
-
-    await workflowStep.save();
-
-    return workflowStep;
+        const updated = await workflowStepModel.findByIdAndUpdate(
+            stepId,
+            { $set: data },
+            { session, returnDocument: "after", runValidators: true }
+        );
+        if (!updated) throw new WorkflowDefinitionError("Workflow step no longer exists.");
+        return updated;
+    });
 }
 
 async function deleteWorkflowStep(stepId, actorId){
-    const { step: workflowStep } = await requireWorkflowStepRole(
+    const { step: workflowStep, workflow } = await requireWorkflowStepRole(
         actorId,
         stepId,
         ["org_admin"]
     );
+    assertDraftWorkflow(workflow);
 
-    await workflowStep.deleteOne();
-    return workflowStep;
+    return mutateDraftStep(workflowStep.workflowTemplate, async (session) => {
+        await workflowStepModel.deleteOne({ _id: stepId }, { session });
+        return workflowStep;
+    });
 }
 
 module.exports = {

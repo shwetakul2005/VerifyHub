@@ -1,10 +1,17 @@
 const workflowTemplateModel = require("../models/workflow-template.model");
+const workflowStepModel = require("../models/workflow-step.model");
 const UserModel = require("../models/user.model");
+const mongoose = require("mongoose");
 const {
     requireOrganizationRole,
     requireWorkflowRole,
     idEquals
 } = require("./authorization.service");
+const {
+    WorkflowDefinitionError,
+    assertDraftWorkflow,
+    validatePublishableSteps
+} = require("../domain/workflow-definition");
 
 async function createWorkflowTemplate(data, actorId){
     
@@ -74,13 +81,14 @@ async function getWorkflowTemplateById(id, actorId)
 }
 
 async function updateWorkflowTemplate(workflowId, data, actorId) {
-    const { name, description, status } = data;
+    const { name, description } = data;
 
     const { workflow } = await requireWorkflowRole(
         actorId,
         workflowId,
         ["org_admin"]
     );
+    assertDraftWorkflow(workflow);
 
     // Prevent duplicate workflow names within the same organization
     if (name && name !== workflow.name) {
@@ -93,28 +101,146 @@ async function updateWorkflowTemplate(workflowId, data, actorId) {
             throw new Error("Workflow template with this name already exists.");
         }
 
-        workflow.name = name;
     }
 
-    if (description !== undefined) {
-        workflow.description = description;
-    }
-
-    if (status !== undefined) {
-        workflow.status = status;
-    }
-
-    await workflow.save();
-
-    return workflow;
+    const changes = {};
+    if (name !== undefined) changes.name = name;
+    if (description !== undefined) changes.description = description;
+    const updated = await workflowTemplateModel.findOneAndUpdate(
+        { _id: workflowId, status: "draft" },
+        { $set: changes },
+        { returnDocument: "after", runValidators: true }
+    );
+    if (!updated) throw new WorkflowDefinitionError("Workflow is no longer an editable draft.");
+    return updated;
 }
 
 async function deleteWorkflowTemplate(id, actorId)
 {
     const { workflow } = await requireWorkflowRole(actorId, id, ["org_admin"]);
+    assertDraftWorkflow(workflow);
 
-    await workflow.deleteOne();
+    const result = await workflowTemplateModel.deleteOne({ _id: id, status: "draft" });
+    if (result.deletedCount !== 1) {
+        throw new WorkflowDefinitionError("Workflow is no longer an editable draft.");
+    }
     return workflow;
+}
+
+async function publishWorkflowTemplate(id, actorId) {
+    const { workflow } = await requireWorkflowRole(actorId, id, ["org_admin"]);
+    if (workflow.status === "published") return workflow;
+    assertDraftWorkflow(workflow);
+
+    const session = await mongoose.startSession();
+    let published;
+    try {
+        await session.withTransaction(async () => {
+            // Step writes also touch this document. A concurrent step mutation
+            // therefore conflicts with the publish transaction rather than
+            // slipping in after validation.
+            const claimed = await workflowTemplateModel.findOneAndUpdate(
+                { _id: workflow._id, status: "draft" },
+                { $inc: { definitionRevision: 1 } },
+                { session, returnDocument: "after" }
+            );
+            if (!claimed) throw new WorkflowDefinitionError("Workflow is no longer an editable draft.");
+            const steps = await workflowStepModel.find({ workflowTemplate: workflow._id }).session(session);
+            validatePublishableSteps(steps);
+            published = await workflowTemplateModel.findByIdAndUpdate(
+                workflow._id,
+                {
+                    $set: {
+                        status: "published",
+                        familyId: workflow.familyId || workflow._id,
+                        publishedAt: new Date(),
+                        publishedBy: actorId,
+                        schemaVersion: 2
+                    }
+                },
+                { session, returnDocument: "after", runValidators: true }
+            );
+        });
+    } finally {
+        await session.endSession();
+    }
+    return published;
+}
+
+async function createWorkflowVersion(id, actorId) {
+    const { workflow } = await requireWorkflowRole(actorId, id, ["org_admin"]);
+    if (workflow.status !== "published") {
+        throw new WorkflowDefinitionError("Only a published workflow can create a new version.");
+    }
+
+    const indexes = await workflowTemplateModel.collection.listIndexes().toArray();
+    const versionIndex = indexes.find((index) => index.name === "unique_workflow_family_version");
+    if (!versionIndex?.unique ||
+        JSON.stringify(versionIndex.key) !== JSON.stringify({ organization: 1, familyId: 1, version: 1 })) {
+        const error = new Error("Workflow versioning is unavailable until the unique version index is installed.");
+        error.statusCode = 503;
+        throw error;
+    }
+
+    const familyId = workflow.familyId || workflow._id;
+    const session = await mongoose.startSession();
+    let createdWorkflow;
+    try {
+        await session.withTransaction(async () => {
+            const source = await workflowTemplateModel.findOne({
+                _id: workflow._id,
+                status: "published",
+                archivedAt: null
+            }).session(session);
+            if (!source) {
+                throw new WorkflowDefinitionError("Archived workflows cannot create new versions.");
+            }
+            const latest = await workflowTemplateModel.findOne({
+                organization: source.organization,
+                familyId
+            }).sort({ version: -1 }).session(session);
+            const [created] = await workflowTemplateModel.create([{
+                organization: source.organization,
+                name: source.name,
+                description: source.description,
+                status: "draft",
+                version: (latest?.version || source.version) + 1,
+                familyId,
+                previousVersion: source._id,
+                schemaVersion: 2,
+                createdBy: actorId,
+                assignedVerifier: source.assignedVerifier
+            }], { session });
+            createdWorkflow = created;
+
+            const sourceSteps = await workflowStepModel.find({
+                workflowTemplate: source._id,
+                archivedAt: null
+            }).sort({ stepOrder: 1 }).session(session).lean();
+            if (sourceSteps.length > 0) {
+                await workflowStepModel.insertMany(sourceSteps.map((step) => ({
+                    workflowTemplate: created._id,
+                    stepOrder: step.stepOrder,
+                    stepType: step.stepType,
+                    title: step.title,
+                    description: step.description,
+                    isRequired: step.isRequired,
+                    maxRetries: step.maxRetries,
+                    schemaVersion: 2,
+                    status: step.status,
+                    config: step.config
+                })), { session });
+            }
+        });
+    } catch (error) {
+        if (error?.code === 11000) {
+            throw new WorkflowDefinitionError("A workflow version was created concurrently.");
+        }
+        throw error;
+    } finally {
+        await session.endSession();
+    }
+    return createdWorkflow;
 }
 
 
@@ -123,5 +249,7 @@ module.exports = {
                     getWorkflowTemplates, 
                     getWorkflowTemplateById,
                     updateWorkflowTemplate, 
-                    deleteWorkflowTemplate
+                    deleteWorkflowTemplate,
+                    publishWorkflowTemplate,
+                    createWorkflowVersion
                 }

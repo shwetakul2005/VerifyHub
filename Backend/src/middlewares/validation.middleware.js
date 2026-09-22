@@ -48,8 +48,7 @@ const schemas = {
 
     workflowUpdate: z.object({
         name: shortText.optional(),
-        description: z.string().trim().max(1000).optional(),
-        status: z.enum(["draft", "published", "archived"]).optional()
+        description: z.string().trim().max(1000).optional()
     }).strict().refine((value) => Object.keys(value).length > 0, {
         message: "At least one workflow field is required."
     }),
@@ -61,6 +60,7 @@ const schemas = {
         title: shortText,
         description: z.string().trim().max(1000).optional(),
         isRequired: z.boolean().optional(),
+        maxRetries: z.number().int().min(0).max(10).optional(),
         status: z.enum(["active", "inactive"]).optional(),
         config: z.record(z.string(), z.unknown()).optional()
     }).strict(),
@@ -70,6 +70,7 @@ const schemas = {
         title: shortText.optional(),
         description: z.string().trim().max(1000).optional(),
         isRequired: z.boolean().optional(),
+        maxRetries: z.number().int().min(0).max(10).optional(),
         status: z.enum(["active", "inactive"]).optional(),
         config: z.record(z.string(), z.unknown()).optional()
     }).strict().refine((value) => Object.keys(value).length > 0, {

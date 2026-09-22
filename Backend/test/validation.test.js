@@ -64,3 +64,19 @@ test("MVP workflow validation rejects unimplemented step types", () => {
     assert.equal(result.nextCalled, false);
     assert.equal(result.response.statusCode, 400);
 });
+
+test("workflow step validation retains a bounded retry override", () => {
+    const draft = runMiddleware(validateBody(schemas.workflowStepCreate), {
+        workflowTemplate: "64b64c1234567890abcdef12",
+        stepOrder: 1,
+        stepType: "email",
+        title: "Verify email",
+        maxRetries: 2
+    });
+    assert.equal(draft.nextCalled, true);
+    assert.equal(draft.req.body.maxRetries, 2);
+
+    const invalid = runMiddleware(validateBody(schemas.workflowStepUpdate), { maxRetries: -1 });
+    assert.equal(invalid.nextCalled, false);
+    assert.equal(invalid.response.statusCode, 400);
+});

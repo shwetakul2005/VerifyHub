@@ -31,6 +31,7 @@ const workflowTemplateSchema = new mongoose.Schema({
         default: null
     },
     schemaVersion: { type: Number, default: 1 },
+    definitionRevision: { type: Number, default: 0 },
     createdBy:{
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
