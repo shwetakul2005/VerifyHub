@@ -1,1 +1,17 @@
 .worktrees/
+.env
+.env.*
+!.env.example
+node_modules/
+uploads/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+ML-Service/RAG/chroma_store/
+ML-Service/faces/
+Backend.zip
+/*.traineddata
+/Backend/*.traineddata
+*.log

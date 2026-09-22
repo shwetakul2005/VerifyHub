@@ -29,6 +29,9 @@ function VerifierDashboard () {
         fetchDocuments();
 
     }, []);
+    if (loading) {
+        return <div>Loading pending documents...</div>;
+    }
     return (
         <main>
             <h1>Verifier Dashboard</h1>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../context/useAuth";
 import { getAllRequests } from "../../api/applicant.api";
 import { useNavigate } from "react-router";
 import { getRequestStatusMeta } from "./requestStatus";
@@ -31,6 +31,7 @@ function Dashboard() {
                         "Failed to fetch verification request:",
                         error
                     );
+                    setError("Failed to load verification requests.");
                 } finally {
                     setLoading(false);
                 }

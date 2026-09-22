@@ -1,16 +1,9 @@
-# React + Vite
+# VerifyHub frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React/Vite client currently contains login and registration, applicant request pages, email-link handling, and verifier pages. It is an **in-progress** interface; the organization-admin workflow builder, invitation flow, and final responsive design are still planned.
 
-Currently, two official plugins are available:
+Run `npm ci` and `npm run dev` from this directory. The API client currently points to `http://localhost:3000/api` in `src/api/axios.js`; the backend must allow `http://localhost:5173` via `FRONTEND_URL`.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Checks: `npm run lint`, `npm run build`, and `node --test src/pages/dashboard/requestStatus.test.js`.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+For the product vision, complete setup, and limitations, see the [root README](../README.md).
