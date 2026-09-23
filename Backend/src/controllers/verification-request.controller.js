@@ -149,6 +149,27 @@ async function getVerificationRequestByUserIdController(req, res) {
     }
 }
 
+async function archiveVerificationRequestController(req, res) {
+    try {
+        const verificationRequest = await verificationRequestServices.archiveVerificationRequest(
+            req.params.id,
+            req.user.id,
+            req.body.reason
+        );
+        return res.status(200).json({
+            success: true,
+            message: "Verification request archived successfully.",
+            verificationRequest
+        });
+    } catch (err) {
+        return res.status(err.statusCode || 400).json({
+            success: false,
+            message: err.message,
+            code: err.code
+        });
+    }
+}
+
 module.exports = {
     createVerificationRequestController,
     getVerificationRequestsOrgController,
@@ -156,5 +177,6 @@ module.exports = {
     getApplicantWorkflowController,
     progressRequestController,
     getVerificationRequestByUserIdController,
-    submitFaceVerificationController
+    submitFaceVerificationController,
+    archiveVerificationRequestController
 };

@@ -1,5 +1,8 @@
 const workflowStepModel = require("../models/workflow-step.model");
 const workflowTemplateModel = require("../models/workflow-template.model");
+const VerificationRequest = require("../models/verification-request.model");
+const VerificationStepExecution = require("../models/verification-step-execution.model");
+const AuditLog = require("../models/audit-log.model");
 const mongoose = require("mongoose");
 const {
     requireWorkflowRole,
@@ -34,7 +37,7 @@ async function createWorkflowStep(data, actorId){
     const { workflow } = await requireWorkflowRole(actorId, workflowTemplate, ["org_admin"]);
     assertDraftWorkflow(workflow);
     return mutateDraftStep(workflowTemplate, async (session) => {
-        const existing = await workflowStepModel.findOne({ workflowTemplate, stepOrder }).session(session);
+        const existing = await workflowStepModel.findOne({ workflowTemplate, stepOrder, archivedAt: null }).session(session);
         if (existing) throw new WorkflowDefinitionError("A step with this order already exists in the workflow.");
         const [created] = await workflowStepModel.create([data], { session });
         return created;
@@ -48,7 +51,7 @@ async function getWorkflowSteps(workflowTemplateId, actorId){
         ["org_admin", "verifier", "analyst"]
     );
     const allWorkflowSteps = await workflowStepModel
-    .find({workflowTemplate:workflowTemplateId})
+    .find({ workflowTemplate: workflowTemplateId, archivedAt: null })
     .sort({stepOrder: 1});
     return allWorkflowSteps;
 }
@@ -69,12 +72,16 @@ async function updateWorkflowStep(stepId, data, actorId){
         ["org_admin"]
     );
     assertDraftWorkflow(workflow);
+    if (workflowStep.archivedAt) {
+        throw new WorkflowDefinitionError("Archived workflow steps are immutable.", "WORKFLOW_STEP_ARCHIVED");
+    }
 
     return mutateDraftStep(workflowStep.workflowTemplate, async (session) => {
         if (data.stepOrder !== undefined && data.stepOrder !== workflowStep.stepOrder) {
             const existing = await workflowStepModel.findOne({
                 workflowTemplate: workflowStep.workflowTemplate,
-                stepOrder: data.stepOrder
+                stepOrder: data.stepOrder,
+                archivedAt: null
             }).session(session);
             if (existing) {
                 throw new WorkflowDefinitionError("Workflow step with this stepOrder already exists.");
@@ -90,16 +97,56 @@ async function updateWorkflowStep(stepId, data, actorId){
     });
 }
 
-async function deleteWorkflowStep(stepId, actorId){
+async function deleteWorkflowStep(stepId, actorId, reason = "Removed by organization administrator"){
     const { step: workflowStep, workflow } = await requireWorkflowStepRole(
         actorId,
         stepId,
         ["org_admin"]
     );
     assertDraftWorkflow(workflow);
+    if (workflowStep.archivedAt) return workflowStep;
 
     return mutateDraftStep(workflowStep.workflowTemplate, async (session) => {
-        await workflowStepModel.deleteOne({ _id: stepId }, { session });
+        const referencedExecution = await VerificationStepExecution.exists({ workflowStep: stepId }).session(session);
+        const referencedSnapshot = await VerificationRequest.exists({
+            "workflowSnapshot.steps.workflowStep": stepId
+        }).session(session);
+        if (referencedExecution || referencedSnapshot) {
+            const archived = await workflowStepModel.findOneAndUpdate(
+                { _id: stepId, archivedAt: null },
+                {
+                    $set: {
+                        status: "inactive",
+                        archivedAt: new Date(),
+                        archivedBy: actorId,
+                        archiveReason: reason
+                    }
+                },
+                { session, returnDocument: "after", runValidators: true }
+            );
+            if (!archived) throw new WorkflowDefinitionError("Workflow step is already archived.");
+            await AuditLog.create([{
+                organization: workflow.organization,
+                action: "step_removed",
+                actor: actorId,
+                actorType: "user",
+                target: workflowStep._id,
+                targetModel: "WorkflowStep",
+                transition: { fromState: workflowStep.status, toState: "archived", command: "archive", reason }
+            }], { session });
+            return archived;
+        }
+        const deletion = await workflowStepModel.deleteOne({ _id: stepId, archivedAt: null }, { session });
+        if (deletion.deletedCount !== 1) throw new WorkflowDefinitionError("Workflow step no longer exists.");
+        await AuditLog.create([{
+            organization: workflow.organization,
+            action: "step_removed",
+            actor: actorId,
+            actorType: "user",
+            target: workflowStep._id,
+            targetModel: "WorkflowStep",
+            transition: { fromState: workflowStep.status, command: "delete", reason }
+        }], { session });
         return workflowStep;
     });
 }

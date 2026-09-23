@@ -135,7 +135,7 @@ async function getVerificationRequests(organizationId, actorId){
         ["org_admin", "verifier", "analyst"]
     );
 
-    const query = { organization: organizationId };
+    const query = { organization: organizationId, archivedAt: null };
     if (membership.role === "verifier") {
         const assignedWorkflows = await workflowTemplateModel.find({
             organization: organizationId,
@@ -181,7 +181,7 @@ async function getVerificationRequestByUserId(userId) {
     //     throw new Error("User does not exist.");
     // }
     const verificationRequests = await verificationRequestModel
-        .find({applicant:userId})
+        .find({ applicant: userId, archivedAt: null })
         .populate("organization")
         .populate("workflowTemplate")
         .populate("currentStep");
@@ -370,12 +370,63 @@ async function getRequestProgress(requestId, actorId){
     };
 }   
 
+async function archiveVerificationRequest(requestId, actorId, reason = "Archived by organization administrator") {
+    const { request } = await requireRequestAccess(actorId, requestId, {
+        organizationRoles: ["org_admin"]
+    });
+    if (request.archivedAt) return request;
+    if (!["completed", "rejected", "cancelled"].includes(request.status)) {
+        throw new WorkflowDefinitionError(
+            "Only completed, rejected, or cancelled requests can be archived.",
+            "REQUEST_NOT_TERMINAL"
+        );
+    }
+
+    const session = await mongoose.startSession();
+    let archived;
+    try {
+        await session.withTransaction(async () => {
+            const current = await verificationRequestModel.findById(requestId).session(session);
+            if (!current) throw new AccessError("Verification request not found.", 404);
+            if (current.archivedAt) {
+                archived = current;
+                return;
+            }
+            if (!["completed", "rejected", "cancelled"].includes(current.status)) {
+                throw new WorkflowDefinitionError(
+                    "Only completed, rejected, or cancelled requests can be archived.",
+                    "REQUEST_NOT_TERMINAL"
+                );
+            }
+            archived = await verificationRequestModel.findOneAndUpdate(
+                { _id: current._id, archivedAt: null, status: current.status },
+                { $set: { archivedAt: new Date(), archivedBy: actorId, archiveReason: reason } },
+                { session, returnDocument: "after", runValidators: true }
+            );
+            if (!archived) throw new WorkflowDefinitionError("Verification request changed concurrently.");
+            await AuditLogModel.create([{
+                organization: current.organization,
+                action: "request_archived",
+                actor: actorId,
+                actorType: "user",
+                target: current._id,
+                targetModel: "VerificationRequest",
+                transition: { fromState: current.status, toState: current.status, command: "archive", reason }
+            }], { session });
+        });
+    } finally {
+        await session.endSession();
+    }
+    return archived;
+}
+
 module.exports = {createVerificationRequest,
                     getVerificationRequests,
                     getVerificationRequestById,
                     getApplicantWorkflowByRequestId,
     submitFaceVerificationStep,
                     getVerificationRequestByUserId,
-                    getRequestProgress
+                    getRequestProgress,
+                    archiveVerificationRequest
                 };
 

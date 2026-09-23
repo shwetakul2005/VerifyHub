@@ -41,7 +41,7 @@ workflowTemplateRoutes.patch("/:id", authMiddleware.authUser, validateBody(schem
  * @description DELETE a workflow using its id
  * @access Organization admin
  */
-workflowTemplateRoutes.delete("/:id",authMiddleware.authUser, workflowTemplateController.deleteWorkflowTemplateController)
+workflowTemplateRoutes.delete("/:id", authMiddleware.authUser, validateBody(schemas.archive), workflowTemplateController.deleteWorkflowTemplateController)
 
 
 module.exports = workflowTemplateRoutes;

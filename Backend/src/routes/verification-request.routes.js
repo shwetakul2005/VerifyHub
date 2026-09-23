@@ -55,6 +55,13 @@ verificationRequestRouter.post(
  */
 verificationRequestRouter.get("/:id", authMiddleware.authUser, roleMiddleware.authRoles("admin", "verifier", "user"), verificationRequestController.getVerificationRequestByIdController);
 
+verificationRequestRouter.delete(
+    "/:id",
+    authMiddleware.authUser,
+    validateBody(schemas.archive),
+    verificationRequestController.archiveVerificationRequestController
+);
+
 /**
  * @route GET /verification-requests/:requestId/progress
  * @description get the status of all the workflowsteps of this request

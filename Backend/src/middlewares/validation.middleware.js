@@ -91,6 +91,10 @@ const schemas = {
         reason: z.string().trim().min(3).max(1000)
     }).strict(),
 
+    archive: z.object({
+        reason: z.string().trim().min(3).max(1000).optional()
+    }).strict().default({}),
+
     documentReject: z.object({
         rejectionReason: z.string().trim().min(3).max(1000)
     }).strict()

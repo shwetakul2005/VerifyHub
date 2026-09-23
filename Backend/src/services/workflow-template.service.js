@@ -1,5 +1,7 @@
 const workflowTemplateModel = require("../models/workflow-template.model");
 const workflowStepModel = require("../models/workflow-step.model");
+const verificationRequestModel = require("../models/verification-request.model");
+const AuditLog = require("../models/audit-log.model");
 const UserModel = require("../models/user.model");
 const mongoose = require("mongoose");
 const {
@@ -24,7 +26,7 @@ async function createWorkflowTemplate(data, actorId){
 
     await requireOrganizationRole(actorId, organization, ["org_admin"]);
 
-    const existingWorkflow = await workflowTemplateModel.findOne({name, organization});
+    const existingWorkflow = await workflowTemplateModel.findOne({ name, organization, archivedAt: null });
 
     if(existingWorkflow) {
         throw new Error("Workflow template already exists.");
@@ -66,7 +68,7 @@ async function getWorkflowTemplates(organizationId, actorId)
         organizationId,
         ["org_admin", "verifier", "analyst"]
     );
-    const allWorkflows = await workflowTemplateModel.find({organization:organizationId});
+    const allWorkflows = await workflowTemplateModel.find({ organization: organizationId, archivedAt: null });
     return allWorkflows;
 }
 
@@ -94,7 +96,8 @@ async function updateWorkflowTemplate(workflowId, data, actorId) {
     if (name && name !== workflow.name) {
         const existingWorkflow = await workflowTemplateModel.findOne({
             organization: workflow.organization,
-            name
+            name,
+            archivedAt: null
         });
 
         if (existingWorkflow) {
@@ -115,16 +118,64 @@ async function updateWorkflowTemplate(workflowId, data, actorId) {
     return updated;
 }
 
-async function deleteWorkflowTemplate(id, actorId)
-{
+async function deleteWorkflowTemplate(id, actorId, reason = "Removed by organization administrator") {
     const { workflow } = await requireWorkflowRole(actorId, id, ["org_admin"]);
-    assertDraftWorkflow(workflow);
+    if (workflow.archivedAt) return workflow;
 
-    const result = await workflowTemplateModel.deleteOne({ _id: id, status: "draft" });
-    if (result.deletedCount !== 1) {
-        throw new WorkflowDefinitionError("Workflow is no longer an editable draft.");
+    const session = await mongoose.startSession();
+    let result;
+    try {
+        await session.withTransaction(async () => {
+            const current = await workflowTemplateModel.findById(id).session(session);
+            if (!current) throw new WorkflowDefinitionError("Workflow no longer exists.");
+            if (current.archivedAt) {
+                result = current;
+                return;
+            }
+            const referenced = await verificationRequestModel.exists({
+                $or: [{ workflowTemplate: current._id }, { workflowVersion: current._id }]
+            }).session(session);
+            const mustArchive = current.status !== "draft" || Boolean(referenced);
+            if (mustArchive) {
+                const now = new Date();
+                result = await workflowTemplateModel.findOneAndUpdate(
+                    { _id: current._id, archivedAt: null },
+                    { $set: { status: "archived", archivedAt: now, archivedBy: actorId, archiveReason: reason } },
+                    { session, returnDocument: "after", runValidators: true }
+                );
+                await workflowStepModel.updateMany(
+                    { workflowTemplate: current._id, archivedAt: null },
+                    { $set: { status: "inactive", archivedAt: now, archivedBy: actorId, archiveReason: reason } },
+                    { session }
+                );
+                await AuditLog.create([{
+                    organization: current.organization,
+                    action: "workflow_archived",
+                    actor: actorId,
+                    actorType: "user",
+                    target: current._id,
+                    targetModel: "WorkflowTemplate",
+                    transition: { fromState: current.status, toState: "archived", command: "archive", reason }
+                }], { session });
+                return;
+            }
+            await workflowStepModel.deleteMany({ workflowTemplate: current._id }, { session });
+            await workflowTemplateModel.deleteOne({ _id: current._id, status: "draft" }, { session });
+            await AuditLog.create([{
+                organization: current.organization,
+                action: "workflow_deleted",
+                actor: actorId,
+                actorType: "user",
+                target: current._id,
+                targetModel: "WorkflowTemplate",
+                transition: { fromState: "draft", command: "delete", reason }
+            }], { session });
+            result = current;
+        });
+    } finally {
+        await session.endSession();
     }
-    return workflow;
+    return result;
 }
 
 async function publishWorkflowTemplate(id, actorId) {

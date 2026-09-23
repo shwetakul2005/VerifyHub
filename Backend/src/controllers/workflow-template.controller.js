@@ -90,7 +90,11 @@ async function deleteWorkflowTemplateController(req,res) {
     const workflowTemplateId = req.params.id;
     let workflowTemplate;
     try{
-        workflowTemplate = await workflowTemplateServices.deleteWorkflowTemplate(workflowTemplateId, req.user.id);
+        workflowTemplate = await workflowTemplateServices.deleteWorkflowTemplate(
+            workflowTemplateId,
+            req.user.id,
+            req.body.reason
+        );
     }
     catch(err){
         return res.status(err.statusCode || 400).json({
@@ -101,7 +105,9 @@ async function deleteWorkflowTemplateController(req,res) {
 
     return res.status(200).json({
         success: true,
-        message: "Workflow template deleted successfully.",
+        message: workflowTemplate.archivedAt
+            ? "Workflow template archived successfully."
+            : "Workflow template deleted successfully.",
         workflowTemplate
     })
 }
