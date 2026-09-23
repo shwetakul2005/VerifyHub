@@ -2,8 +2,9 @@ const crypto = require("crypto");
 const mongoose = require("mongoose");
 const VerificationRequest = require("../models/verification-request.model");
 const VerificationStepExecution = require("../models/verification-step-execution.model");
+const VerificationDocument = require("../models/verification-document.model");
 const AuditLog = require("../models/audit-log.model");
-const { requireRequestAccess, AccessError, idEquals } = require("./authorization.service");
+const { requireRequestAccess, requireDocumentReviewer, AccessError, idEquals } = require("./authorization.service");
 const {
     REQUEST_STATES,
     EXECUTION_STATES,
@@ -514,6 +515,197 @@ async function cancelVerification(requestId, actorId, reason) {
     return result;
 }
 
+async function reviewDocument(documentId, actorId, decision, rejectionReason = null) {
+    if (!["approved", "rejected"].includes(decision)) {
+        throw new WorkflowCommandConflictError("Review decision is invalid.", "INVALID_REVIEW_DECISION");
+    }
+    if (decision === "rejected" && !rejectionReason?.trim()) {
+        throw new WorkflowCommandConflictError("A rejection reason is required.", "REJECTION_REASON_REQUIRED");
+    }
+    await requireDocumentReviewer(actorId, documentId);
+    const session = await mongoose.startSession();
+    let result;
+    try {
+        await session.withTransaction(async () => {
+            const document = await VerificationDocument.findById(documentId).session(session);
+            if (!document) throw new AccessError("Document not found.", 404);
+            if (document.reviewStatus === decision) {
+                result = document;
+                return;
+            }
+            if (document.reviewStatus !== "pending") {
+                throw new WorkflowCommandConflictError("Document already has a different review decision.", "REVIEW_DECISION_CONFLICT");
+            }
+            const request = await VerificationRequest.findById(document.verificationRequest).session(session);
+            if (!request) throw new AccessError("Verification request not found.", 404);
+            if (request.status !== REQUEST_STATES.IN_PROGRESS || !request.currentExecution) {
+                throw new WorkflowCommandConflictError("The document's request is not awaiting review.");
+            }
+            const execution = await VerificationStepExecution.findOne({
+                _id: request.currentExecution,
+                verificationRequest: request._id,
+                workflowStep: document.workflowStep
+            }).session(session);
+            if (!execution || execution.status !== EXECUTION_STATES.WAITING_FOR_REVIEW) {
+                throw new WorkflowCommandConflictError("The document's execution is not awaiting review.");
+            }
+            const now = new Date();
+            const updatedDocument = await VerificationDocument.findOneAndUpdate(
+                { _id: document._id, reviewStatus: "pending" },
+                {
+                    $set: {
+                        reviewStatus: decision,
+                        reviewedBy: actorId,
+                        reviewedAt: now,
+                        rejectionReason: decision === "rejected" ? rejectionReason.trim() : null
+                    }
+                },
+                { session, returnDocument: "after" }
+            );
+            if (!updatedDocument) throw new WorkflowCommandConflictError("Document was reviewed concurrently.");
+            await writeTransition(session, {
+                organization: request.organization,
+                action: "review_decision",
+                actor: actorId,
+                target: document._id,
+                targetModel: "VerificationDocument",
+                fromState: "pending",
+                toState: decision,
+                command: decision === "approved" ? "approve" : "reject",
+                reason: decision === "rejected" ? rejectionReason.trim() : undefined
+            });
+
+            const executionStatus = decision === "approved" ? EXECUTION_STATES.COMPLETED : EXECUTION_STATES.FAILED;
+            assertExecutionTransition(execution.status, executionStatus);
+            const executionSet = {
+                status: executionStatus,
+                processingToken: null,
+                leaseExpiresAt: null,
+                metadata: { ...(execution.metadata || {}), result: decision, verifiedBy: actorId }
+            };
+            if (decision === "approved") executionSet.completedAt = now;
+            if (decision === "rejected") {
+                executionSet.lastError = { code: "REVIEW_REJECTED", message: rejectionReason.trim(), retryable: false };
+            }
+            await VerificationStepExecution.updateOne(
+                { _id: execution._id, status: EXECUTION_STATES.WAITING_FOR_REVIEW, stateVersion: execution.stateVersion },
+                { $set: executionSet, $inc: { stateVersion: 1 } },
+                { session }
+            );
+            await writeTransition(session, {
+                organization: request.organization,
+                action: "execution_transition",
+                actor: actorId,
+                target: execution._id,
+                targetModel: "VerificationStepExecution",
+                fromState: EXECUTION_STATES.WAITING_FOR_REVIEW,
+                toState: executionStatus,
+                command: decision === "approved" ? "approve" : "reject",
+                reason: decision === "rejected" ? rejectionReason.trim() : undefined
+            });
+
+            if (decision === "approved") {
+                const next = await VerificationStepExecution.findOne({
+                    verificationRequest: request._id,
+                    stepOrder: { $gt: execution.stepOrder },
+                    status: EXECUTION_STATES.PENDING
+                }).sort({ stepOrder: 1 }).session(session);
+                if (next) {
+                    await VerificationRequest.updateOne(
+                        { _id: request._id, status: REQUEST_STATES.IN_PROGRESS, currentExecution: execution._id, stateVersion: request.stateVersion },
+                        {
+                            $set: { currentExecution: next._id, currentStep: next.workflowStep, lastTransitionAt: now },
+                            $inc: { stateVersion: 1 }
+                        },
+                        { session }
+                    );
+                } else {
+                    assertRequestTransition(request.status, REQUEST_STATES.COMPLETED);
+                    await VerificationRequest.updateOne(
+                        { _id: request._id, status: REQUEST_STATES.IN_PROGRESS, currentExecution: execution._id, stateVersion: request.stateVersion },
+                        {
+                            $set: { status: REQUEST_STATES.COMPLETED, currentExecution: null, currentStep: null, completedAt: now, lastTransitionAt: now },
+                            $inc: { stateVersion: 1 }
+                        },
+                        { session }
+                    );
+                    await writeTransition(session, {
+                        organization: request.organization,
+                        action: "request_transition",
+                        actor: actorId,
+                        target: request._id,
+                        targetModel: "VerificationRequest",
+                        fromState: REQUEST_STATES.IN_PROGRESS,
+                        toState: REQUEST_STATES.COMPLETED,
+                        command: "complete"
+                    });
+                }
+            } else {
+                assertRequestTransition(request.status, REQUEST_STATES.REJECTED);
+                const futureExecutions = await VerificationStepExecution.find({
+                    verificationRequest: request._id,
+                    _id: { $ne: execution._id },
+                    status: { $in: [EXECUTION_STATES.PENDING, EXECUTION_STATES.WAITING_FOR_INPUT,
+                        EXECUTION_STATES.PROCESSING, EXECUTION_STATES.WAITING_FOR_REVIEW, EXECUTION_STATES.FAILED] }
+                }).session(session);
+                for (const future of futureExecutions) {
+                    assertExecutionTransition(future.status, EXECUTION_STATES.CANCELLED);
+                    await VerificationStepExecution.updateOne(
+                        { _id: future._id, status: future.status, stateVersion: future.stateVersion },
+                        {
+                            $set: { status: EXECUTION_STATES.CANCELLED, cancelledAt: now, cancelledBy: actorId, cancellationReason: "Request rejected" },
+                            $inc: { stateVersion: 1 }
+                        },
+                        { session }
+                    );
+                    await writeTransition(session, {
+                        organization: request.organization,
+                        action: "execution_transition",
+                        actor: actorId,
+                        target: future._id,
+                        targetModel: "VerificationStepExecution",
+                        fromState: future.status,
+                        toState: EXECUTION_STATES.CANCELLED,
+                        command: "reject",
+                        reason: rejectionReason.trim()
+                    });
+                }
+                await VerificationRequest.updateOne(
+                    { _id: request._id, status: REQUEST_STATES.IN_PROGRESS, currentExecution: execution._id, stateVersion: request.stateVersion },
+                    {
+                        $set: {
+                            status: REQUEST_STATES.REJECTED,
+                            currentExecution: null,
+                            currentStep: null,
+                            rejectedAt: now,
+                            rejectedBy: actorId,
+                            rejectionReason: rejectionReason.trim(),
+                            lastTransitionAt: now
+                        },
+                        $inc: { stateVersion: 1 }
+                    },
+                    { session }
+                );
+                await writeTransition(session, {
+                    organization: request.organization,
+                    action: "request_transition",
+                    actor: actorId,
+                    target: request._id,
+                    targetModel: "VerificationRequest",
+                    fromState: REQUEST_STATES.IN_PROGRESS,
+                    toState: REQUEST_STATES.REJECTED,
+                    command: "reject",
+                    reason: rejectionReason.trim()
+                });
+            }
+            result = updatedDocument;
+        });
+    } finally {
+        await session.endSession();
+    }
+    return result;
+}
+
 async function moveToNextStep() {
     throw new WorkflowCommandConflictError("Direct workflow advancement is disabled; finalize the current execution instead.");
 }
@@ -530,6 +722,7 @@ module.exports = {
     executeCurrentStep,
     retryExecution,
     cancelVerification,
+    reviewDocument,
     moveToNextStep,
     completeVerification
 };
