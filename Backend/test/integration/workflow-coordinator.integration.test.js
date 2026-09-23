@@ -79,7 +79,7 @@ async function createFixture(label) {
         status: "pending",
         schemaVersion: 2
     })));
-    return { admin, request, executions };
+    return { admin, applicant, request, executions };
 }
 
 test("simultaneous starts are idempotent and select exactly the first execution", async () => {
@@ -199,4 +199,54 @@ test("an adapter failure becomes a retryable failed execution without advancing"
     assert.equal(String(storedRequest.currentExecution), String(executions[0]._id));
     assert.equal(storedExecution.status, "failed");
     assert.equal(storedExecution.lastError.retryable, true);
+});
+
+test("retry reuses the failed execution, honors its budget, and is idempotent by key", async () => {
+    const { admin, request, executions } = await createFixture("retry");
+    await coordinator.startVerification(request._id, admin._id);
+    const claim = await coordinator.claimExecution(request._id, executions[0]._id, admin._id);
+    await coordinator.finalizeExecution({
+        requestId: request._id,
+        executionId: executions[0]._id,
+        processingToken: claim.execution.processingToken,
+        outcome: { status: "failed", error: { code: "PROVIDER_DOWN", message: "Provider unavailable", retryable: true } }
+    });
+    const first = await coordinator.retryExecution(request._id, admin._id, "retry-key-1");
+    const repeated = await coordinator.retryExecution(request._id, admin._id, "retry-key-1");
+    assert.equal(String(first._id), String(executions[0]._id));
+    assert.equal(repeated.stateVersion, first.stateVersion);
+    assert.equal(repeated.status, "pending");
+    assert.equal(repeated.attemptHistory.length, 1);
+    assert.equal(await AuditLog.countDocuments({ target: executions[0]._id, "transition.command": "retry" }), 1);
+
+    await VerificationStepExecution.findByIdAndUpdate(executions[0]._id, {
+        $set: { status: "failed", attempt: 4, maxRetries: 3, lastError: { code: "FAILED", retryable: true } }
+    });
+    await assert.rejects(
+        coordinator.retryExecution(request._id, admin._id, "retry-key-2"),
+        (error) => error.statusCode === 409 && error.code === "RETRY_BUDGET_EXHAUSTED"
+    );
+});
+
+test("cancellation is idempotent, cancels active executions, and rejects late results", async () => {
+    const { admin, applicant, request, executions } = await createFixture("cancel");
+    await coordinator.startVerification(request._id, admin._id);
+    const claim = await coordinator.claimExecution(request._id, executions[0]._id, admin._id);
+    const cancelled = await coordinator.cancelVerification(request._id, applicant._id, "No longer required");
+    const repeated = await coordinator.cancelVerification(request._id, admin._id, "Different reason");
+    assert.equal(cancelled.status, "cancelled");
+    assert.equal(String(repeated.cancelledBy), String(applicant._id));
+    assert.equal(repeated.cancellationReason, "No longer required");
+    const storedExecutions = await VerificationStepExecution.find({ verificationRequest: request._id }).lean();
+    assert.equal(storedExecutions.every((execution) => execution.status === "cancelled"), true);
+    assert.equal(await AuditLog.countDocuments({ target: request._id, "transition.command": "cancel" }), 1);
+    await assert.rejects(
+        coordinator.finalizeExecution({
+            requestId: request._id,
+            executionId: executions[0]._id,
+            processingToken: claim.execution.processingToken,
+            outcome: { status: "completed" }
+        }),
+        (error) => error.statusCode === 409
+    );
 });

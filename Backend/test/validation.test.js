@@ -80,3 +80,14 @@ test("workflow step validation retains a bounded retry override", () => {
     assert.equal(invalid.nextCalled, false);
     assert.equal(invalid.response.statusCode, 400);
 });
+
+test("retry and cancellation commands require bounded identifiers and reasons", () => {
+    const retry = runMiddleware(validateBody(schemas.workflowRetry), { idempotencyKey: "retry-123" });
+    assert.equal(retry.nextCalled, true);
+    const missingRetryKey = runMiddleware(validateBody(schemas.workflowRetry), {});
+    assert.equal(missingRetryKey.response.statusCode, 400);
+    const cancellation = runMiddleware(validateBody(schemas.workflowCancel), { reason: "Applicant withdrew" });
+    assert.equal(cancellation.nextCalled, true);
+    const blankReason = runMiddleware(validateBody(schemas.workflowCancel), { reason: " " });
+    assert.equal(blankReason.response.statusCode, 400);
+});

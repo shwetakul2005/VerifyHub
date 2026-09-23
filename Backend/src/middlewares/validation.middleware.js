@@ -83,6 +83,14 @@ const schemas = {
         applicant: objectId
     }).strict(),
 
+    workflowRetry: z.object({
+        idempotencyKey: z.string().trim().min(1).max(120)
+    }).strict(),
+
+    workflowCancel: z.object({
+        reason: z.string().trim().min(3).max(1000)
+    }).strict(),
+
     documentReject: z.object({
         rejectionReason: z.string().trim().min(3).max(1000)
     }).strict()

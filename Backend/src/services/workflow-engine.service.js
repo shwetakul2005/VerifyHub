@@ -35,7 +35,9 @@ async function writeTransition(session, event) {
         transition: {
             fromState: event.fromState,
             toState: event.toState,
-            command: event.command
+            command: event.command,
+            reason: event.reason,
+            idempotencyKey: event.idempotencyKey
         }
     }], { session });
 }
@@ -348,6 +350,170 @@ async function executeCurrentStep(requestId, actorId, options = {}) {
     return { claimed: true, outcome, ...finalized };
 }
 
+async function retryExecution(requestId, actorId, idempotencyKey) {
+    if (!idempotencyKey?.trim()) {
+        throw new WorkflowCommandConflictError("Retry requires an idempotency key.", "IDEMPOTENCY_KEY_REQUIRED");
+    }
+    await requireCommandAccess(actorId, requestId, ["org_admin", "verifier"], true);
+    const session = await mongoose.startSession();
+    let result;
+    try {
+        await session.withTransaction(async () => {
+            const request = await VerificationRequest.findById(requestId).session(session);
+            if (!request) throw new AccessError("Verification request not found.", 404);
+            if (request.status !== REQUEST_STATES.IN_PROGRESS || !request.currentExecution) {
+                throw new WorkflowCommandConflictError("Only the current execution of an active request can retry.");
+            }
+            const execution = await VerificationStepExecution.findById(request.currentExecution).session(session);
+            if (!execution) throw new AccessError("Verification execution not found.", 404);
+            if ((execution.attemptHistory || []).some((item) => item.idempotencyKey === idempotencyKey)) {
+                result = execution;
+                return;
+            }
+            if (execution.status !== EXECUTION_STATES.FAILED) {
+                throw new WorkflowCommandConflictError("Only a failed execution can retry.");
+            }
+            if (execution.lastError?.retryable === false) {
+                throw new WorkflowCommandConflictError("This execution failure is not retryable.", "EXECUTION_NOT_RETRYABLE");
+            }
+            if (execution.attempt > execution.maxRetries) {
+                throw new WorkflowCommandConflictError("Execution retry budget is exhausted.", "RETRY_BUDGET_EXHAUSTED");
+            }
+            assertExecutionTransition(execution.status, EXECUTION_STATES.PENDING);
+            const history = {
+                attempt: execution.attempt,
+                finishedAt: new Date(),
+                errorCode: execution.lastError?.code,
+                idempotencyKey
+            };
+            const updated = await VerificationStepExecution.findOneAndUpdate(
+                { _id: execution._id, status: EXECUTION_STATES.FAILED, stateVersion: execution.stateVersion },
+                {
+                    $set: {
+                        status: EXECUTION_STATES.PENDING,
+                        lastError: null,
+                        completedAt: null,
+                        processingToken: null,
+                        leaseExpiresAt: null
+                    },
+                    $push: { attemptHistory: history },
+                    $inc: { stateVersion: 1 }
+                },
+                { session, returnDocument: "after" }
+            );
+            if (!updated) throw new WorkflowCommandConflictError("Execution retry was accepted concurrently.");
+            await writeTransition(session, {
+                organization: request.organization,
+                action: "execution_transition",
+                actor: actorId,
+                target: execution._id,
+                targetModel: "VerificationStepExecution",
+                fromState: EXECUTION_STATES.FAILED,
+                toState: EXECUTION_STATES.PENDING,
+                command: "retry",
+                idempotencyKey
+            });
+            result = updated;
+        });
+    } finally {
+        await session.endSession();
+    }
+    return result;
+}
+
+async function cancelVerification(requestId, actorId, reason) {
+    if (!reason?.trim()) {
+        throw new WorkflowCommandConflictError("Cancellation requires a reason.", "CANCELLATION_REASON_REQUIRED");
+    }
+    await requireCommandAccess(actorId, requestId, ["org_admin"], true);
+    const session = await mongoose.startSession();
+    let result;
+    try {
+        await session.withTransaction(async () => {
+            const request = await VerificationRequest.findById(requestId).session(session);
+            if (!request) throw new AccessError("Verification request not found.", 404);
+            if (request.status === REQUEST_STATES.CANCELLED) {
+                result = request;
+                return;
+            }
+            assertRequestTransition(request.status, REQUEST_STATES.CANCELLED);
+            const cancellableStates = [
+                EXECUTION_STATES.PENDING,
+                EXECUTION_STATES.WAITING_FOR_INPUT,
+                EXECUTION_STATES.PROCESSING,
+                EXECUTION_STATES.WAITING_FOR_REVIEW,
+                EXECUTION_STATES.FAILED
+            ];
+            const executions = await VerificationStepExecution.find({
+                verificationRequest: request._id,
+                status: { $in: cancellableStates }
+            }).session(session);
+            const now = new Date();
+            for (const execution of executions) {
+                assertExecutionTransition(execution.status, EXECUTION_STATES.CANCELLED);
+                await VerificationStepExecution.updateOne(
+                    { _id: execution._id, status: execution.status, stateVersion: execution.stateVersion },
+                    {
+                        $set: {
+                            status: EXECUTION_STATES.CANCELLED,
+                            cancelledAt: now,
+                            cancelledBy: actorId,
+                            cancellationReason: reason.trim(),
+                            processingToken: null,
+                            leaseExpiresAt: null
+                        },
+                        $inc: { stateVersion: 1 }
+                    },
+                    { session }
+                );
+                await writeTransition(session, {
+                    organization: request.organization,
+                    action: "execution_transition",
+                    actor: actorId,
+                    target: execution._id,
+                    targetModel: "VerificationStepExecution",
+                    fromState: execution.status,
+                    toState: EXECUTION_STATES.CANCELLED,
+                    command: "cancel",
+                    reason: reason.trim()
+                });
+            }
+            const updated = await VerificationRequest.findOneAndUpdate(
+                { _id: request._id, status: request.status, stateVersion: request.stateVersion },
+                {
+                    $set: {
+                        status: REQUEST_STATES.CANCELLED,
+                        currentExecution: null,
+                        currentStep: null,
+                        cancelledAt: now,
+                        cancelledBy: actorId,
+                        cancellationReason: reason.trim(),
+                        lastTransitionAt: now
+                    },
+                    $inc: { stateVersion: 1 }
+                },
+                { session, returnDocument: "after" }
+            );
+            if (!updated) throw new WorkflowCommandConflictError("Request was cancelled concurrently.");
+            await writeTransition(session, {
+                organization: request.organization,
+                action: "request_transition",
+                actor: actorId,
+                target: request._id,
+                targetModel: "VerificationRequest",
+                fromState: request.status,
+                toState: REQUEST_STATES.CANCELLED,
+                command: "cancel",
+                reason: reason.trim()
+            });
+            result = updated;
+        });
+    } finally {
+        await session.endSession();
+    }
+    return result;
+}
+
 async function moveToNextStep() {
     throw new WorkflowCommandConflictError("Direct workflow advancement is disabled; finalize the current execution instead.");
 }
@@ -362,6 +528,8 @@ module.exports = {
     claimExecution,
     finalizeExecution,
     executeCurrentStep,
+    retryExecution,
+    cancelVerification,
     moveToNextStep,
     completeVerification
 };
