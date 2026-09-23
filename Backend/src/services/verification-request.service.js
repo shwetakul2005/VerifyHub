@@ -195,6 +195,27 @@ async function getVerificationRequestByUserId(userId) {
     
 }
 
+async function resolveRequestSteps(verificationRequest, legacyFilter = {}) {
+    const snapshotSteps = verificationRequest.workflowSnapshot?.steps || [];
+    if (snapshotSteps.length > 0) {
+        return snapshotSteps
+            .map((step) => ({
+                _id: step.workflowStep,
+                stepOrder: step.stepOrder,
+                stepType: step.stepType,
+                title: step.title,
+                description: step.description,
+                isRequired: step.isRequired,
+                maxRetries: step.maxRetries,
+                config: step.config
+            }))
+            .sort((left, right) => left.stepOrder - right.stepOrder);
+    }
+    const workflowId = verificationRequest.workflowTemplate?._id || verificationRequest.workflowTemplate;
+    if (!workflowId) throw new AccessError("Workflow template not found.", 404);
+    return workflowStepModel.find({ workflowTemplate: workflowId, ...legacyFilter }).sort({ stepOrder: 1 });
+}
+
 async function getApplicantWorkflowByRequestId(requestId, userId) {
     await requireRequestAccess(userId, requestId, { allowApplicant: true });
 
@@ -215,12 +236,7 @@ async function getApplicantWorkflowByRequestId(requestId, userId) {
     if (requestApplicantId !== String(userId)) {
         throw new Error("You are not allowed to access this verification workflow.");
     }
-    const workflowSteps = await workflowStepModel
-        .find({
-            workflowTemplate: verificationRequest.workflowTemplate._id,
-            status: "active"
-        })
-        .sort({ stepOrder: 1 });
+    const workflowSteps = await resolveRequestSteps(verificationRequest, { status: "active" });
 
     const executions = await VerificationStepExecutionModel.find({ verificationRequest: requestId })
         .lean();
@@ -299,7 +315,7 @@ async function getApplicantWorkflowByRequestId(requestId, userId) {
                 description: verificationRequest.currentStep.description
             }
             : null,
-        workflowName: verificationRequest.workflowTemplate?.name || null,
+        workflowName: verificationRequest.workflowSnapshot?.name || verificationRequest.workflowTemplate?.name || null,
         steps
     };
 }
@@ -316,15 +332,9 @@ async function getRequestProgress(requestId, actorId){
     });
 
     await verificationRequest.populate("currentStep");
-    const {currentStep, workflowTemplate} = verificationRequest;
+    const { currentStep } = verificationRequest;
 
-    if (!workflowTemplate) {
-        throw new AccessError("Workflow template not found.", 404);
-    }
-
-    const steps = await workflowStepModel.find({
-        workflowTemplate: workflowTemplate._id
-    }).sort({stepOrder: 1});
+    const steps = await resolveRequestSteps(verificationRequest);
 
     const executions = await VerificationStepExecutionModel.find({
         verificationRequest: requestId

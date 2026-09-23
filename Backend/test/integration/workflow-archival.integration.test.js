@@ -54,6 +54,20 @@ async function createReference(data, status = "completed") {
         organization: data.organization._id,
         workflowTemplate: data.workflow._id,
         workflowVersion: data.workflow._id,
+        workflowSnapshot: {
+            version: data.workflow.version,
+            name: data.workflow.name,
+            assignedVerifier: data.workflow.assignedVerifier,
+            steps: [{
+                workflowStep: data.step._id,
+                stepOrder: data.step.stepOrder,
+                stepType: data.step.stepType,
+                title: data.step.title,
+                isRequired: data.step.isRequired,
+                maxRetries: data.step.maxRetries,
+                config: data.step.config
+            }]
+        },
         applicant: data.applicant._id,
         status,
         schemaVersion: 2
@@ -83,6 +97,11 @@ test("deleting a referenced workflow archives the version and steps while preser
     assert.ok(archivedStep.archivedAt);
     assert.ok(await VerificationRequest.findById(request._id));
     assert.equal((await workflowTemplateService.getWorkflowTemplates(data.organization._id, data.admin._id)).length, 0);
+    await WorkflowStep.updateOne({ _id: data.step._id }, { $set: { title: "Mutated live history" } });
+    const applicantFlow = await verificationRequestService.getApplicantWorkflowByRequestId(request._id, data.applicant._id);
+    assert.equal(applicantFlow.workflowName, data.workflow.name);
+    assert.equal(applicantFlow.steps.length, 1);
+    assert.equal(applicantFlow.steps[0].title, data.step.title);
     assert.equal(await AuditLog.countDocuments({ action: "workflow_archived", target: data.workflow._id }), 1);
     assert.equal(await AuditLog.countDocuments({ action: "step_removed", target: data.step._id, "transition.command": "archive" }), 1);
 });
