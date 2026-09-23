@@ -6,9 +6,10 @@ async function startVerificationController(req,res){
     try{
         verificationRequest = await workflowEngineService.startVerification(requestId, req.user.id);
     }catch(err){
-        return res.status(400).json({
+        return res.status(err.statusCode || 500).json({
             success: false,
-            message: err.message
+            message: err.statusCode ? err.message : "Unable to start verification.",
+            code: err.code || undefined
         })
     }
 
@@ -25,9 +26,10 @@ async function executeCurrentStepController(req,res){
     try{
         verificationRequest = await workflowEngineService.executeCurrentStep(requestId, req.user.id);
     }catch(err){
-        return res.status(400).json({
+        return res.status(err.statusCode || 500).json({
             success: false,
-            message: err.message
+            message: err.statusCode ? err.message : "Unable to execute verification step.",
+            code: err.code || undefined
         })
     }
 
