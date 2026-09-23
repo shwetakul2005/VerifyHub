@@ -1,11 +1,10 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { AuthContext } from "./authState";
 import {
     loginUser,
     logoutUser,
     getCurrentUser
 } from "../api/auth.api";
-
-const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
 
@@ -17,7 +16,7 @@ export const AuthProvider = ({ children }) => {
             try {
                 const data = await getCurrentUser();
                 setUser(data.user);
-            } catch (error) {
+            } catch {
                 setUser(null);
             } finally {
                 setLoading(false);
@@ -51,5 +50,3 @@ export const AuthProvider = ({ children }) => {
         </AuthContext.Provider>
     );
 };
-
-export const useAuth = () => useContext(AuthContext);

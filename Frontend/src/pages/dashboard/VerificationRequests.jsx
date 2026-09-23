@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import {
@@ -32,10 +32,9 @@ function VerificationRequest() {
     const [liveSelfie, setLiveSelfie] = useState(null);
 
     // Fetch verification request
-    const fetchRequest = async () => {
+    const fetchRequest = useCallback(async () => {
         try {
             setLoading(true);
-
             const data = await getReqById(id);
 
             console.log("Verification request:", data);
@@ -54,9 +53,9 @@ function VerificationRequest() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [id]);
 
-    const fetchDocuments = async () => {
+    const fetchDocuments = useCallback(async () => {
         try {
             const data = await getDocuments(id);
             setDocuments(data);
@@ -68,9 +67,9 @@ function VerificationRequest() {
                 );
             }
         }
-    };
+    }, [id]);
 
-    const fetchWorkflow = async () => {
+    const fetchWorkflow = useCallback(async () => {
         console.log(`id is ${id}`);
         try {
             const data = await getApplicantWorkflow(id);
@@ -82,13 +81,20 @@ function VerificationRequest() {
                 "Failed to load workflow details."
             );
         }
-    };
+    }, [id]);
 
     useEffect(() => {
-        fetchRequest();
-        fetchDocuments();
-        fetchWorkflow();
-    }, [id]);
+        let active = true;
+        // Begin network work after the effect callback; state changes occur
+        // when each request settles, not synchronously during the effect.
+        Promise.resolve().then(() => {
+            if (!active) return;
+            fetchRequest();
+            fetchDocuments();
+            fetchWorkflow();
+        });
+        return () => { active = false; };
+    }, [fetchRequest, fetchDocuments, fetchWorkflow]);
 
     // Handle file selection
     const handleFileChange = (event) => {
@@ -248,14 +254,6 @@ function VerificationRequest() {
         if (step.status === "current") {
             setSuccess(`Continue with ${step.title}.`);
 
-            const targetId =
-                step.stepType === "email"
-                    ? "email-step-section"
-                    : step.stepType === "document"
-                        ? "document-step-section"
-                        : step.stepType === "face_verification"
-                            ? "face-verification-step-section"
-                            : "verification-step-section";
             return;
         }
 
