@@ -163,3 +163,40 @@ test("finalization advances strictly in order, is repeatable, and completes only
         (error) => error.statusCode === 409
     );
 });
+
+test("execute calls one outcome adapter outside the claim transaction and finalizes its result", async () => {
+    const { admin, request, executions } = await createFixture("adapter");
+    await coordinator.startVerification(request._id, admin._id);
+    let calls = 0;
+    const adapter = {
+        async execute(context) {
+            calls += 1;
+            assert.equal(String(context.execution._id), String(executions[0]._id));
+            return { status: "waiting_for_input", metadata: { delivery: "sent" }, message: "Waiting" };
+        }
+    };
+    const results = await Promise.all([
+        coordinator.executeCurrentStep(request._id, admin._id, { adapters: { email: adapter } }),
+        coordinator.executeCurrentStep(request._id, admin._id, { adapters: { email: adapter } })
+    ]);
+    assert.equal(calls, 1);
+    assert.equal(results.filter((result) => result.claimed === false).length, 1);
+    const stored = await VerificationStepExecution.findById(executions[0]._id).lean();
+    assert.equal(stored.status, "waiting_for_input");
+    assert.equal(stored.metadata.delivery, "sent");
+});
+
+test("an adapter failure becomes a retryable failed execution without advancing", async () => {
+    const { admin, request, executions } = await createFixture("adapter-failure");
+    await coordinator.startVerification(request._id, admin._id);
+    const adapter = { async execute() { throw new Error("provider unavailable"); } };
+    await assert.rejects(
+        coordinator.executeCurrentStep(request._id, admin._id, { adapters: { email: adapter } }),
+        (error) => error.statusCode === 502
+    );
+    const storedRequest = await VerificationRequest.findById(request._id).lean();
+    const storedExecution = await VerificationStepExecution.findById(executions[0]._id).lean();
+    assert.equal(String(storedRequest.currentExecution), String(executions[0]._id));
+    assert.equal(storedExecution.status, "failed");
+    assert.equal(storedExecution.lastError.retryable, true);
+});

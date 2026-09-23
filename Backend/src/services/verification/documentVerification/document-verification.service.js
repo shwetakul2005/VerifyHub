@@ -1,104 +1,42 @@
-const VerificationDocumentModel = require("../../../models/verification-document.model");
-const VerificationStepExecutionModel = require("../../../models/verification-step-execution.model");
+const VerificationDocument = require("../../../models/verification-document.model");
 const { findParser } = require("../ocr/findParser");
 const ocrService = require("../ocr/ocr.service");
 
-
-async function execute(verificationRequest) {
-    // const workflowEngineService = require("../../workflow-engine.service");
-    // Populate current workflow step
-    // await VerificationStepExecutionModel.populate("currentStep");
-    // console.log("===== DOCUMENT EXECUTE CALLED =====");
-    // console.log("Request:", verificationRequest._id);
-
-    // Find uploaded document(s) for the current step
-    const documents = await VerificationDocumentModel.find({
-        verificationRequest: verificationRequest._id,
-        workflowStep: verificationRequest.currentStep._id
+async function execute(context, dependencies = {}) {
+    const findDocuments = dependencies.findDocuments || ((query) => VerificationDocument.find(query));
+    const extractText = dependencies.extractText || ocrService.extractText;
+    const parseDocument = dependencies.parseDocument || findParser;
+    const documents = await findDocuments({
+        verificationRequest: context.request._id,
+        workflowStep: context.execution.workflowStep
     });
-
     if (documents.length === 0) {
         return {
-            success: false,
-            completed: false,
+            status: "waiting_for_input",
             message: "Waiting for applicant to upload the required document."
         };
     }
-
-    const unprocessedDocuments = documents.filter((document) =>
-        !document.metadata?.ocr
-    );
-
-    if (unprocessedDocuments.length === 0) {
-        return {
-            success: false,
-            completed: false,
-            message: "Document has been processed and is waiting for verifier review."
-        };
-    }
-
-    let execution =
-    // console.log("verificationRequest");
-    // console.log(verificationRequest._id);
-        await VerificationStepExecutionModel.findOne({
-            verificationRequest: verificationRequest._id,
-            workflowStep: verificationRequest.currentStep._id,
-            status: "in_progress",
-        });
-
-    
-
-    if (!execution) {
-        execution = await VerificationStepExecutionModel.create({
-            verificationRequest: verificationRequest._id,
-            workflowStep: verificationRequest.currentStep._id,
-            status: "in_progress",
-            startedAt: new Date(),
-            metadata: {
-                verificationType: "document"
-            }
-        });
-    }
-    // console.log(`execution: ${execution}`);
-    // console.log(documents.length);
-   
-
-    for (const document of unprocessedDocuments) {
-        const imagePath = document.filePath;
-        const rawText = await ocrService.extractText(imagePath);
-        const docType = document.documentType;
-        const result = await findParser(docType, rawText);
-        
+    const unprocessed = documents.filter((document) => !document.metadata?.ocr);
+    for (const document of unprocessed) {
+        const rawText = await extractText(document.filePath);
+        const parsed = await parseDocument(document.documentType, rawText);
         document.metadata = {
-            ...document.metadata,
-            ocr:{
-                rawText: rawText,
-            },
-            extracted:{
-                result: result,
-            }
+            ...(document.metadata || {}),
+            ocr: { rawText },
+            extracted: { result: parsed }
         };
         await document.save();
     }
-
-    // execution.status = "completed";
-    // execution.completedAt = new Date();
-
-    // execution.metadata = {
-    //     ...execution.metadata,
-    //     result: "approved",
-    //     documentsVerified: documents.length
-    // };
-
-    // await execution.save();
-
     return {
-        success: true,
-        completed: false,
-        message: "Document uploaded and processed. Waiting for verifier review."
+        status: "waiting_for_review",
+        metadata: {
+            verificationType: "document",
+            documentIds: documents.map((document) => String(document._id))
+        },
+        message: unprocessed.length > 0
+            ? "Document processed. Waiting for verifier review."
+            : "Document is waiting for verifier review."
     };
 }
 
-module.exports = {
-    execute
-};
+module.exports = { execute };

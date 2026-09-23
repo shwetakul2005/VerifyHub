@@ -40,9 +40,10 @@ async function writeTransition(session, event) {
     }], { session });
 }
 
-async function requireCommandAccess(actorId, requestId, roles) {
+async function requireCommandAccess(actorId, requestId, roles, allowApplicant = false) {
     if (!actorId) return;
     await requireRequestAccess(actorId, requestId, {
+        allowApplicant,
         organizationRoles: roles,
         requireAssignedVerifier: roles.includes("verifier")
     });
@@ -106,7 +107,7 @@ async function startVerification(requestId, actorId) {
 }
 
 async function claimExecution(requestId, executionId, actorId, options = {}) {
-    await requireCommandAccess(actorId, requestId, ["org_admin", "verifier"]);
+    await requireCommandAccess(actorId, requestId, ["org_admin", "verifier"], options.allowApplicant === true);
     const leaseMs = options.leaseMs || DEFAULT_LEASE_MS;
     const session = await mongoose.startSession();
     let result;
@@ -129,10 +130,17 @@ async function claimExecution(requestId, executionId, actorId, options = {}) {
                 result = { claimed: false, request, execution };
                 return;
             }
+            if (execution.status === EXECUTION_STATES.WAITING_FOR_INPUT && options.allowWaitingForInput !== true) {
+                result = { claimed: false, request, execution };
+                return;
+            }
+            const targetStatus = execution.status === EXECUTION_STATES.PENDING && options.initialStatus
+                ? options.initialStatus
+                : EXECUTION_STATES.PROCESSING;
             const isExpiredReclaim = execution.status === EXECUTION_STATES.PROCESSING &&
                 (!execution.leaseExpiresAt || execution.leaseExpiresAt <= new Date());
             if (!isExpiredReclaim) {
-                assertExecutionTransition(execution.status, EXECUTION_STATES.PROCESSING);
+                assertExecutionTransition(execution.status, targetStatus);
             }
             const token = crypto.randomUUID();
             const now = new Date();
@@ -140,7 +148,7 @@ async function claimExecution(requestId, executionId, actorId, options = {}) {
                 { _id: execution._id, status: execution.status, stateVersion: execution.stateVersion },
                 {
                     $set: {
-                        status: EXECUTION_STATES.PROCESSING,
+                        status: targetStatus,
                         processingToken: token,
                         leaseExpiresAt: new Date(now.getTime() + leaseMs),
                         startedAt: execution.startedAt || now
@@ -157,7 +165,7 @@ async function claimExecution(requestId, executionId, actorId, options = {}) {
                 target: updated._id,
                 targetModel: "VerificationStepExecution",
                 fromState: execution.status,
-                toState: EXECUTION_STATES.PROCESSING,
+                toState: targetStatus,
                 command: isExpiredReclaim ? "reclaim" : "execute"
             });
             result = { claimed: true, request, execution: updated };
@@ -181,7 +189,7 @@ async function finalizeExecution({ requestId, executionId, processingToken, outc
         await session.withTransaction(async () => {
             const execution = await VerificationStepExecution.findOne({ _id: executionId, verificationRequest: requestId }).session(session);
             if (!execution) throw new AccessError("Verification execution not found.", 404);
-            if (execution.status === targetStatus) {
+            if (execution.status === targetStatus && execution.processingToken !== processingToken) {
                 result = { idempotent: true, request: await VerificationRequest.findById(requestId).session(session), execution };
                 return;
             }
@@ -190,10 +198,11 @@ async function finalizeExecution({ requestId, executionId, processingToken, outc
             if (request.status !== REQUEST_STATES.IN_PROGRESS || !idEquals(request.currentExecution, execution._id)) {
                 throw new WorkflowCommandConflictError("Late or out-of-sequence execution result was rejected.", "STALE_EXECUTION_RESULT");
             }
-            if (execution.status !== EXECUTION_STATES.PROCESSING || execution.processingToken !== processingToken) {
+            if (execution.processingToken !== processingToken) {
                 throw new WorkflowCommandConflictError("Execution claim is no longer valid.", "INVALID_PROCESSING_CLAIM");
             }
-            assertExecutionTransition(execution.status, targetStatus);
+            const settlesSameStateClaim = execution.status === targetStatus;
+            if (!settlesSameStateClaim) assertExecutionTransition(execution.status, targetStatus);
             const now = new Date();
             const set = {
                 status: targetStatus,
@@ -206,21 +215,23 @@ async function finalizeExecution({ requestId, executionId, processingToken, outc
                 set.lastError = outcome.error || { code: "EXECUTION_FAILED", message: "Execution failed.", retryable: true };
             }
             const updatedExecution = await VerificationStepExecution.findOneAndUpdate(
-                { _id: execution._id, status: EXECUTION_STATES.PROCESSING, processingToken, stateVersion: execution.stateVersion },
+                { _id: execution._id, status: execution.status, processingToken, stateVersion: execution.stateVersion },
                 { $set: set, $inc: { stateVersion: 1 } },
                 { session, returnDocument: "after" }
             );
             if (!updatedExecution) throw new WorkflowCommandConflictError("Execution result was finalized concurrently.");
-            await writeTransition(session, {
-                organization: request.organization,
-                action: "execution_transition",
-                actor: actorId,
-                target: execution._id,
-                targetModel: "VerificationStepExecution",
-                fromState: EXECUTION_STATES.PROCESSING,
-                toState: targetStatus,
-                command: "finalize"
-            });
+            if (!settlesSameStateClaim) {
+                await writeTransition(session, {
+                    organization: request.organization,
+                    action: "execution_transition",
+                    actor: actorId,
+                    target: execution._id,
+                    targetModel: "VerificationStepExecution",
+                    fromState: execution.status,
+                    toState: targetStatus,
+                    command: "finalize"
+                });
+            }
 
             let updatedRequest = request;
             if (targetStatus === EXECUTION_STATES.COMPLETED) {
@@ -272,11 +283,69 @@ async function finalizeExecution({ requestId, executionId, processingToken, outc
     return result;
 }
 
-async function executeCurrentStep(requestId, actorId) {
+function defaultAdapters() {
+    return {
+        email: require("./verification/emailVerification/email-verification.service"),
+        document: require("./verification/documentVerification/document-verification.service"),
+        face_verification: require("./verification/faceVerification/face-verification.service")
+    };
+}
+
+async function executeCurrentStep(requestId, actorId, options = {}) {
     const request = await VerificationRequest.findById(requestId);
     if (!request) throw new AccessError("Verification request not found.", 404);
     if (!request.currentExecution) throw new WorkflowCommandConflictError("Request has no current execution.");
-    return claimExecution(requestId, request.currentExecution, actorId);
+    const execution = await VerificationStepExecution.findById(request.currentExecution).lean();
+    const inputFirstTypes = new Set(["email", "document", "face_verification"]);
+    const claimOptions = { ...options };
+    if (execution?.status === EXECUTION_STATES.PENDING && inputFirstTypes.has(execution.stepSnapshot?.stepType)) {
+        claimOptions.initialStatus = EXECUTION_STATES.WAITING_FOR_INPUT;
+    }
+    const claim = await claimExecution(requestId, request.currentExecution, actorId, claimOptions);
+    if (!claim.claimed) return claim;
+    const stepType = claim.execution.stepSnapshot?.stepType;
+    const adapter = (options.adapters || defaultAdapters())[stepType];
+    if (!adapter?.execute) {
+        await finalizeExecution({
+            requestId,
+            executionId: claim.execution._id,
+            processingToken: claim.execution.processingToken,
+            outcome: {
+                status: EXECUTION_STATES.FAILED,
+                error: { code: "UNSUPPORTED_STEP_TYPE", message: "No executor is available for this step type.", retryable: false }
+            },
+            actorId
+        });
+        throw new WorkflowCommandConflictError("No executor is available for this step type.", "UNSUPPORTED_STEP_TYPE");
+    }
+    let outcome;
+    try {
+        outcome = await adapter.execute({ request: claim.request, execution: claim.execution });
+    } catch (error) {
+        await finalizeExecution({
+            requestId,
+            executionId: claim.execution._id,
+            processingToken: claim.execution.processingToken,
+            outcome: {
+                status: EXECUTION_STATES.FAILED,
+                error: { code: "STEP_EXECUTION_FAILED", message: error.message, retryable: true }
+            },
+            actorId
+        });
+        const wrapped = new Error("Verification step execution failed.");
+        wrapped.name = "WorkflowExecutionError";
+        wrapped.code = "STEP_EXECUTION_FAILED";
+        wrapped.statusCode = 502;
+        throw wrapped;
+    }
+    const finalized = await finalizeExecution({
+        requestId,
+        executionId: claim.execution._id,
+        processingToken: claim.execution.processingToken,
+        outcome,
+        actorId
+    });
+    return { claimed: true, outcome, ...finalized };
 }
 
 async function moveToNextStep() {

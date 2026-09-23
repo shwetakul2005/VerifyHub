@@ -68,7 +68,9 @@ async function uploadController(req, res) {
             req.user.id
         );
         await workflowEngineService.executeCurrentStep(
-            verificationRequestId
+            verificationRequestId,
+            req.user.id,
+            { allowApplicant: true, allowWaitingForInput: true }
         );
         return res.status(201).json({
             success: true,
