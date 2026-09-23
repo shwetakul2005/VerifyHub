@@ -51,11 +51,28 @@ async function createWorkflowTemplate(data, actorId){
         throw new Error("Selected verifier does not belong to this organization.");
     }
 
-    const createdWorkflow = await workflowTemplateModel.create({
-        ...data,
-        createdBy: actorId,
-        status: "draft"
-    });
+    const session = await mongoose.startSession();
+    let createdWorkflow;
+    try {
+        await session.withTransaction(async () => {
+            [createdWorkflow] = await workflowTemplateModel.create([{
+                ...data,
+                createdBy: actorId,
+                status: "draft"
+            }], { session });
+            await AuditLog.create([{
+                organization,
+                action: "workflow_created",
+                actor: actorId,
+                actorType: "user",
+                target: createdWorkflow._id,
+                targetModel: "WorkflowTemplate",
+                transition: { toState: "draft", command: "create" }
+            }], { session });
+        });
+    } finally {
+        await session.endSession();
+    }
     return createdWorkflow;
 
 }
@@ -109,12 +126,29 @@ async function updateWorkflowTemplate(workflowId, data, actorId) {
     const changes = {};
     if (name !== undefined) changes.name = name;
     if (description !== undefined) changes.description = description;
-    const updated = await workflowTemplateModel.findOneAndUpdate(
-        { _id: workflowId, status: "draft" },
-        { $set: changes },
-        { returnDocument: "after", runValidators: true }
-    );
-    if (!updated) throw new WorkflowDefinitionError("Workflow is no longer an editable draft.");
+    const session = await mongoose.startSession();
+    let updated;
+    try {
+        await session.withTransaction(async () => {
+            updated = await workflowTemplateModel.findOneAndUpdate(
+                { _id: workflowId, status: "draft", archivedAt: null },
+                { $set: changes },
+                { session, returnDocument: "after", runValidators: true }
+            );
+            if (!updated) throw new WorkflowDefinitionError("Workflow is no longer an editable draft.");
+            await AuditLog.create([{
+                organization: workflow.organization,
+                action: "workflow_updated",
+                actor: actorId,
+                actorType: "user",
+                target: workflow._id,
+                targetModel: "WorkflowTemplate",
+                transition: { fromState: "draft", toState: "draft", command: "update" }
+            }], { session });
+        });
+    } finally {
+        await session.endSession();
+    }
     return updated;
 }
 
@@ -138,6 +172,10 @@ async function deleteWorkflowTemplate(id, actorId, reason = "Removed by organiza
             const mustArchive = current.status !== "draft" || Boolean(referenced);
             if (mustArchive) {
                 const now = new Date();
+                const affectedSteps = await workflowStepModel.find({
+                    workflowTemplate: current._id,
+                    archivedAt: null
+                }).session(session).lean();
                 result = await workflowTemplateModel.findOneAndUpdate(
                     { _id: current._id, archivedAt: null },
                     { $set: { status: "archived", archivedAt: now, archivedBy: actorId, archiveReason: reason } },
@@ -157,8 +195,22 @@ async function deleteWorkflowTemplate(id, actorId, reason = "Removed by organiza
                     targetModel: "WorkflowTemplate",
                     transition: { fromState: current.status, toState: "archived", command: "archive", reason }
                 }], { session });
+                if (affectedSteps.length > 0) {
+                    await AuditLog.create(affectedSteps.map((step) => ({
+                        organization: current.organization,
+                        action: "step_removed",
+                        actor: actorId,
+                        actorType: "user",
+                        target: step._id,
+                        targetModel: "WorkflowStep",
+                        transition: { fromState: step.status, toState: "archived", command: "archive", reason }
+                    })), { session });
+                }
                 return;
             }
+            const deletedSteps = await workflowStepModel.find({ workflowTemplate: current._id })
+                .session(session)
+                .lean();
             await workflowStepModel.deleteMany({ workflowTemplate: current._id }, { session });
             await workflowTemplateModel.deleteOne({ _id: current._id, status: "draft" }, { session });
             await AuditLog.create([{
@@ -170,6 +222,17 @@ async function deleteWorkflowTemplate(id, actorId, reason = "Removed by organiza
                 targetModel: "WorkflowTemplate",
                 transition: { fromState: "draft", command: "delete", reason }
             }], { session });
+            if (deletedSteps.length > 0) {
+                await AuditLog.create(deletedSteps.map((step) => ({
+                    organization: current.organization,
+                    action: "step_removed",
+                    actor: actorId,
+                    actorType: "user",
+                    target: step._id,
+                    targetModel: "WorkflowStep",
+                    transition: { fromState: step.status, command: "delete", reason }
+                })), { session });
+            }
             result = current;
         });
     } finally {
@@ -211,6 +274,16 @@ async function publishWorkflowTemplate(id, actorId) {
                 },
                 { session, returnDocument: "after", runValidators: true }
             );
+            await AuditLog.create([{
+                organization: workflow.organization,
+                action: "workflow_published",
+                actor: actorId,
+                actorType: "user",
+                target: workflow._id,
+                targetModel: "WorkflowTemplate",
+                transition: { fromState: "draft", toState: "published", command: "publish" },
+                details: { version: workflow.version }
+            }], { session });
         });
     } finally {
         await session.endSession();
@@ -282,6 +355,16 @@ async function createWorkflowVersion(id, actorId) {
                     config: step.config
                 })), { session });
             }
+            await AuditLog.create([{
+                organization: source.organization,
+                action: "workflow_version_created",
+                actor: actorId,
+                actorType: "user",
+                target: created._id,
+                targetModel: "WorkflowTemplate",
+                transition: { toState: "draft", command: "create_version" },
+                details: { sourceWorkflow: source._id, version: created.version }
+            }], { session });
         });
     } catch (error) {
         if (error?.code === 11000) {

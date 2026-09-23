@@ -40,6 +40,16 @@ async function createWorkflowStep(data, actorId){
         const existing = await workflowStepModel.findOne({ workflowTemplate, stepOrder, archivedAt: null }).session(session);
         if (existing) throw new WorkflowDefinitionError("A step with this order already exists in the workflow.");
         const [created] = await workflowStepModel.create([data], { session });
+        await AuditLog.create([{
+            organization: workflow.organization,
+            action: "step_added",
+            actor: actorId,
+            actorType: "user",
+            target: created._id,
+            targetModel: "WorkflowStep",
+            transition: { toState: created.status, command: "create" },
+            details: { stepOrder: created.stepOrder, stepType: created.stepType }
+        }], { session });
         return created;
     });
 }
@@ -93,6 +103,16 @@ async function updateWorkflowStep(stepId, data, actorId){
             { session, returnDocument: "after", runValidators: true }
         );
         if (!updated) throw new WorkflowDefinitionError("Workflow step no longer exists.");
+        await AuditLog.create([{
+            organization: workflow.organization,
+            action: "step_updated",
+            actor: actorId,
+            actorType: "user",
+            target: updated._id,
+            targetModel: "WorkflowStep",
+            transition: { fromState: workflowStep.status, toState: updated.status, command: "update" },
+            details: { stepOrder: updated.stepOrder, stepType: updated.stepType }
+        }], { session });
         return updated;
     });
 }

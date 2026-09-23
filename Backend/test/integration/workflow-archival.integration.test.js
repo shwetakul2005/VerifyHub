@@ -84,6 +84,7 @@ test("deleting a referenced workflow archives the version and steps while preser
     assert.ok(await VerificationRequest.findById(request._id));
     assert.equal((await workflowTemplateService.getWorkflowTemplates(data.organization._id, data.admin._id)).length, 0);
     assert.equal(await AuditLog.countDocuments({ action: "workflow_archived", target: data.workflow._id }), 1);
+    assert.equal(await AuditLog.countDocuments({ action: "step_removed", target: data.step._id, "transition.command": "archive" }), 1);
 });
 
 test("deleting an unreferenced draft removes it and its unreferenced steps without orphans", async () => {
