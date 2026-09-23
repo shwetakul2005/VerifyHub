@@ -48,8 +48,7 @@ const schemas = {
 
     workflowUpdate: z.object({
         name: shortText.optional(),
-        description: z.string().trim().max(1000).optional(),
-        status: z.enum(["draft", "published", "archived"]).optional()
+        description: z.string().trim().max(1000).optional()
     }).strict().refine((value) => Object.keys(value).length > 0, {
         message: "At least one workflow field is required."
     }),
@@ -61,6 +60,7 @@ const schemas = {
         title: shortText,
         description: z.string().trim().max(1000).optional(),
         isRequired: z.boolean().optional(),
+        maxRetries: z.number().int().min(0).max(10).optional(),
         status: z.enum(["active", "inactive"]).optional(),
         config: z.record(z.string(), z.unknown()).optional()
     }).strict(),
@@ -70,6 +70,7 @@ const schemas = {
         title: shortText.optional(),
         description: z.string().trim().max(1000).optional(),
         isRequired: z.boolean().optional(),
+        maxRetries: z.number().int().min(0).max(10).optional(),
         status: z.enum(["active", "inactive"]).optional(),
         config: z.record(z.string(), z.unknown()).optional()
     }).strict().refine((value) => Object.keys(value).length > 0, {
@@ -81,6 +82,18 @@ const schemas = {
         workflowTemplate: objectId,
         applicant: objectId
     }).strict(),
+
+    workflowRetry: z.object({
+        idempotencyKey: z.string().trim().min(1).max(120)
+    }).strict(),
+
+    workflowCancel: z.object({
+        reason: z.string().trim().min(3).max(1000)
+    }).strict(),
+
+    archive: z.object({
+        reason: z.string().trim().min(3).max(1000).optional()
+    }).strict().default({}),
 
     documentReject: z.object({
         rejectionReason: z.string().trim().min(3).max(1000)

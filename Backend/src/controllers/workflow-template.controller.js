@@ -90,7 +90,11 @@ async function deleteWorkflowTemplateController(req,res) {
     const workflowTemplateId = req.params.id;
     let workflowTemplate;
     try{
-        workflowTemplate = await workflowTemplateServices.deleteWorkflowTemplate(workflowTemplateId, req.user.id);
+        workflowTemplate = await workflowTemplateServices.deleteWorkflowTemplate(
+            workflowTemplateId,
+            req.user.id,
+            req.body.reason
+        );
     }
     catch(err){
         return res.status(err.statusCode || 400).json({
@@ -101,9 +105,43 @@ async function deleteWorkflowTemplateController(req,res) {
 
     return res.status(200).json({
         success: true,
-        message: "Workflow template deleted successfully.",
+        message: workflowTemplate.archivedAt
+            ? "Workflow template archived successfully."
+            : "Workflow template deleted successfully.",
         workflowTemplate
     })
+}
+
+async function publishWorkflowTemplateController(req, res) {
+    try {
+        const workflowTemplate = await workflowTemplateServices.publishWorkflowTemplate(
+            req.params.id,
+            req.user.id
+        );
+        return res.status(200).json({
+            success: true,
+            message: "Workflow published successfully.",
+            workflowTemplate
+        });
+    } catch (err) {
+        return res.status(err.statusCode || 400).json({ success: false, message: err.message });
+    }
+}
+
+async function createWorkflowVersionController(req, res) {
+    try {
+        const workflowTemplate = await workflowTemplateServices.createWorkflowVersion(
+            req.params.id,
+            req.user.id
+        );
+        return res.status(201).json({
+            success: true,
+            message: "Workflow version created successfully.",
+            workflowTemplate
+        });
+    } catch (err) {
+        return res.status(err.statusCode || 400).json({ success: false, message: err.message });
+    }
 }
 
 module.exports = {
@@ -111,4 +149,6 @@ module.exports = {
             getWorkflowTemplatesController,
             getWorkflowTemplateByIdController,
             updateWorkflowTemplateController,
-            deleteWorkflowTemplateController}
+            deleteWorkflowTemplateController,
+            publishWorkflowTemplateController,
+            createWorkflowVersionController}

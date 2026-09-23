@@ -5,96 +5,15 @@ const workflowEngineService = require("./workflow-engine.service");
 const {
     findMembership,
     idEquals,
-    requireDocumentReviewer,
     requireRequestAccess
 } = require("./authorization.service");
 
 async function approve(documentId, verifierId) {
-    const { document } = await requireDocumentReviewer(verifierId, documentId);
-
-    if (document.reviewStatus !== "pending") {
-        throw new Error("Document has already been reviewed.");
-    }
-
-    const execution = await VerificationStepExecution.findOne({
-        verificationRequest: document.verificationRequest._id,
-        workflowStep: document.workflowStep,
-        status: "in_progress"
-    });
-
-    if (!execution) {
-        throw new Error(
-            "Verification step execution not found."
-        );
-    }
-
-    document.reviewStatus = "approved";
-    document.reviewedBy = verifierId;
-    document.reviewedAt = new Date();
-
-    await document.save();
-    execution.status = "completed";
-    execution.completedAt = new Date();
-    
-    execution.metadata = {
-        ...execution.metadata,
-        result: "approved",
-        verifiedBy: verifierId
-    };
-
-    await execution.save();
-
-    const request = await VerificationRequest.findById(
-        document.verificationRequest
-    );
-
-    if (request?.currentStep?.equals(document.workflowStep)) {
-        await workflowEngineService.moveToNextStep(document.verificationRequest);
-    } else if (request && !request.currentStep) {
-        await workflowEngineService.completeVerification(document.verificationRequest);
-    }
-
-    return document;
+    return workflowEngineService.reviewDocument(documentId, verifierId, "approved");
 }
 
 async function reject(documentId, verifierId, rejectionReason) {
-    const { document } = await requireDocumentReviewer(verifierId, documentId);
-
-    if (document.reviewStatus !== "pending") {
-        throw new Error("Document has already been reviewed.");
-    }
-
-    if (!rejectionReason || !rejectionReason.trim()) {
-        throw new Error("A rejection reason is required.");
-    }
-
-    document.reviewStatus = "rejected";
-    document.reviewedBy = verifierId;
-    document.reviewedAt = new Date();
-    document.rejectionReason = rejectionReason.trim();
-
-    await document.save();
-
-    const execution = await VerificationStepExecution.findOne({
-        verificationRequest: document.verificationRequest,
-        workflowStep: document.workflowStep,
-        status: "in_progress"
-    });
-
-    if (execution) {
-        execution.status = "failed";
-        execution.completedAt = new Date();
-        await execution.save();
-    }
-
-    const request = await VerificationRequest.findById(
-        document.verificationRequest
-    );
-
-    request.status = "rejected";
-    await request.save();
-
-    return document;
+    return workflowEngineService.reviewDocument(documentId, verifierId, "rejected", rejectionReason);
 }
 
 async function getPendingDocuments(verifierId) {

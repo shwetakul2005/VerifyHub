@@ -18,6 +18,10 @@ workflowTemplateRoutes.post("/", authMiddleware.authUser, validateBody(schemas.w
  */
 workflowTemplateRoutes.get("/",authMiddleware.authUser, workflowTemplateController.getWorkflowTemplatesController)
 
+workflowTemplateRoutes.post("/:id/publish", authMiddleware.authUser, workflowTemplateController.publishWorkflowTemplateController)
+
+workflowTemplateRoutes.post("/:id/versions", authMiddleware.authUser, workflowTemplateController.createWorkflowVersionController)
+
 /**
  * @route GET /api/workflows/:id
  * @description Get a workflow using its id
@@ -37,7 +41,7 @@ workflowTemplateRoutes.patch("/:id", authMiddleware.authUser, validateBody(schem
  * @description DELETE a workflow using its id
  * @access Organization admin
  */
-workflowTemplateRoutes.delete("/:id",authMiddleware.authUser, workflowTemplateController.deleteWorkflowTemplateController)
+workflowTemplateRoutes.delete("/:id", authMiddleware.authUser, validateBody(schemas.archive), workflowTemplateController.deleteWorkflowTemplateController)
 
 
 module.exports = workflowTemplateRoutes;

@@ -6,9 +6,10 @@ async function startVerificationController(req,res){
     try{
         verificationRequest = await workflowEngineService.startVerification(requestId, req.user.id);
     }catch(err){
-        return res.status(400).json({
+        return res.status(err.statusCode || 500).json({
             success: false,
-            message: err.message
+            message: err.statusCode ? err.message : "Unable to start verification.",
+            code: err.code || undefined
         })
     }
 
@@ -25,9 +26,10 @@ async function executeCurrentStepController(req,res){
     try{
         verificationRequest = await workflowEngineService.executeCurrentStep(requestId, req.user.id);
     }catch(err){
-        return res.status(400).json({
+        return res.status(err.statusCode || 500).json({
             success: false,
-            message: err.message
+            message: err.statusCode ? err.message : "Unable to execute verification step.",
+            code: err.code || undefined
         })
     }
 
@@ -38,4 +40,43 @@ async function executeCurrentStepController(req,res){
     })
 }
 
-module.exports = {startVerificationController, executeCurrentStepController};
+async function retryExecutionController(req, res) {
+    try {
+        const execution = await workflowEngineService.retryExecution(
+            req.params.requestId,
+            req.user.id,
+            req.body.idempotencyKey
+        );
+        return res.status(200).json({ success: true, message: "Execution retry accepted.", execution });
+    } catch (err) {
+        return res.status(err.statusCode || 500).json({
+            success: false,
+            message: err.statusCode ? err.message : "Unable to retry execution.",
+            code: err.code || undefined
+        });
+    }
+}
+
+async function cancelVerificationController(req, res) {
+    try {
+        const verificationRequest = await workflowEngineService.cancelVerification(
+            req.params.requestId,
+            req.user.id,
+            req.body.reason
+        );
+        return res.status(200).json({ success: true, message: "Verification cancelled.", verificationRequest });
+    } catch (err) {
+        return res.status(err.statusCode || 500).json({
+            success: false,
+            message: err.statusCode ? err.message : "Unable to cancel verification.",
+            code: err.code || undefined
+        });
+    }
+}
+
+module.exports = {
+    startVerificationController,
+    executeCurrentStepController,
+    retryExecutionController,
+    cancelVerificationController
+};

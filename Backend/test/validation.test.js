@@ -64,3 +64,41 @@ test("MVP workflow validation rejects unimplemented step types", () => {
     assert.equal(result.nextCalled, false);
     assert.equal(result.response.statusCode, 400);
 });
+
+test("workflow step validation retains a bounded retry override", () => {
+    const draft = runMiddleware(validateBody(schemas.workflowStepCreate), {
+        workflowTemplate: "64b64c1234567890abcdef12",
+        stepOrder: 1,
+        stepType: "email",
+        title: "Verify email",
+        maxRetries: 2
+    });
+    assert.equal(draft.nextCalled, true);
+    assert.equal(draft.req.body.maxRetries, 2);
+
+    const invalid = runMiddleware(validateBody(schemas.workflowStepUpdate), { maxRetries: -1 });
+    assert.equal(invalid.nextCalled, false);
+    assert.equal(invalid.response.statusCode, 400);
+});
+
+test("retry and cancellation commands require bounded identifiers and reasons", () => {
+    const retry = runMiddleware(validateBody(schemas.workflowRetry), { idempotencyKey: "retry-123" });
+    assert.equal(retry.nextCalled, true);
+    const missingRetryKey = runMiddleware(validateBody(schemas.workflowRetry), {});
+    assert.equal(missingRetryKey.response.statusCode, 400);
+    const cancellation = runMiddleware(validateBody(schemas.workflowCancel), { reason: "Applicant withdrew" });
+    assert.equal(cancellation.nextCalled, true);
+    const blankReason = runMiddleware(validateBody(schemas.workflowCancel), { reason: " " });
+    assert.equal(blankReason.response.statusCode, 400);
+});
+
+test("archive commands preserve delete compatibility while bounding an optional reason", () => {
+    const withoutBody = runMiddleware(validateBody(schemas.archive), undefined);
+    assert.equal(withoutBody.nextCalled, true);
+    assert.deepEqual(withoutBody.req.body, {});
+
+    const withReason = runMiddleware(validateBody(schemas.archive), { reason: "Retention period ended" });
+    assert.equal(withReason.nextCalled, true);
+    const blankReason = runMiddleware(validateBody(schemas.archive), { reason: " " });
+    assert.equal(blankReason.response.statusCode, 400);
+});

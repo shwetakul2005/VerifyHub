@@ -81,11 +81,13 @@ async function deleteWorkflowStepController(req, res) {
     const stepId = req.params.id;
 
     try {
-        const workflowStep = await workflowStepServices.deleteWorkflowStep(stepId, req.user.id);
+        const workflowStep = await workflowStepServices.deleteWorkflowStep(stepId, req.user.id, req.body.reason);
 
         return res.status(200).json({
             success: true,
-            message: "Workflow step deleted successfully.",
+            message: workflowStep.archivedAt
+                ? "Workflow step archived successfully."
+                : "Workflow step deleted successfully.",
             workflowStep
         });
     } catch (err) {

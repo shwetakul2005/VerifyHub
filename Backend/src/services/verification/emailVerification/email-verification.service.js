@@ -1,201 +1,116 @@
 const crypto = require("crypto");
-const VerificationRequestModel = require("../../../models/verification-request.model")
+const VerificationRequest = require("../../../models/verification-request.model");
 const VerificationStepExecution = require("../../../models/verification-step-execution.model");
-const { sendEmail } = require("../emailVerification/email");
+const User = require("../../../models/user.model");
+const emailProvider = require("./email");
 
-async function startEmailVerification(requestId, userId) {
-    const verificationRequest =
-        await VerificationRequestModel
-            .findById(requestId)
-            .populate("applicant")
-            .populate("currentStep");
-
-
-    // console.log("verificationRequest:", verificationRequest);
-    // console.log("applicant:", verificationRequest?.applicant);
-    // console.log("userId:", userId);
-
-    if (!verificationRequest) {
-        throw new Error("Verification request not found.");
-    }
-
-    // Make sure this request belongs to the logged-in applicant
-    if (verificationRequest.applicant._id.toString() !== userId.toString()) {
-        throw new Error("You are not authorized to access this verification request.");
-    }
-
-    // Make sure the request can still be processed
-    if (verificationRequest.status === "completed") {
-        throw new Error("Verification request is already completed.");
-    }
-
-    if (verificationRequest.status === "rejected") {
-        throw new Error("Verification request has been rejected.");
-    }
-
-    if (!verificationRequest.currentStep) {
-        throw new Error("No active workflow step.");
-    }
-
-    // Make sure the current step is email verification
-    if (verificationRequest.currentStep.stepType !== "email") {
-        throw new Error("Current workflow step is not email verification.");
-    }
-
-    if (verificationRequest.status === "pending") {
-        verificationRequest.status = "in_progress";
-        verificationRequest.startedAt = new Date();
-        await verificationRequest.save();
-    }
-
-    // Execute the email verification step
-    await execute(verificationRequest);
-
-    return {
-        message: "Verification email sent successfully."
-    };
+async function applicantFor(request) {
+    if (request.applicant?.email) return request.applicant;
+    const applicantId = request.applicant?._id || request.applicant;
+    return User.findById(applicantId);
 }
 
-
-async function execute(verificationRequest) {
-    // Populate required references
-    await verificationRequest.populate("applicant");
-    await verificationRequest.populate("currentStep");
-
-    const applicant = verificationRequest.applicant;
-    const workflowStep = verificationRequest.currentStep;
-
-    let execution = await VerificationStepExecution.findOne({
-        verificationRequest: verificationRequest._id,
-        workflowStep: workflowStep._id,
-        status: "in_progress"
-    });
-
-    if (!execution || new Date() > new Date(execution.metadata.expiresAt)) {
-        const token = crypto.randomBytes(32).toString("hex");
-        const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-
-        execution = await VerificationStepExecution.create({
-            verificationRequest: verificationRequest._id,
-            workflowStep: workflowStep._id,
-            status: "in_progress",
-            metadata: {
-                token,
-                verified: false,
-                expiresAt
-            },
-            startedAt: new Date()
-        });
+async function startEmailVerification(requestId, userId) {
+    const request = await VerificationRequest.findById(requestId).populate("applicant");
+    if (!request) throw new Error("Verification request not found.");
+    if (String(request.applicant?._id) !== String(userId)) {
+        throw new Error("You are not authorized to access this verification request.");
     }
+    if (["completed", "rejected", "cancelled"].includes(request.status)) {
+        throw new Error("Verification request is no longer active.");
+    }
+    if (request.status === "pending") {
+        throw new Error("Verification request must be started by an organization administrator.");
+    }
+    const execution = await VerificationStepExecution.findById(request.currentExecution).lean();
+    if (execution?.stepSnapshot?.stepType !== "email") {
+        throw new Error("Current workflow step is not email verification.");
+    }
+    const coordinator = require("../../workflow-engine.service");
+    return coordinator.executeCurrentStep(requestId, userId, { allowApplicant: true });
+}
 
-    // Verification link
-    const verificationLink = `${process.env.FRONTEND_URL}/verify-email/${execution.metadata.token}`;
-    // Email body
+async function execute(context, dependencies = {}) {
+    const sendEmail = dependencies.sendEmail || emailProvider.sendEmail;
+    const applicant = await applicantFor(context.request);
+    if (!applicant) throw new Error("Applicant not found.");
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    const verificationLink = `${process.env.FRONTEND_URL}/verify-email/${token}`;
     const html = `
         <h2>Email Verification</h2>
-
         <p>Hello ${applicant.username},</p>
-
         <p>Please click the button below to verify your email.</p>
-
-        <a href="${verificationLink}"
-           style="
-                display:inline-block;
-                padding:12px 24px;
-                background:#2563EB;
-                color:white;
-                text-decoration:none;
-                border-radius:8px;">
-            Verify Email
-        </a>
-
+        <a href="${verificationLink}">Verify Email</a>
         <p>This link expires in 30 minutes.</p>
-
-        <p>If you didn't request this verification, you can safely ignore this email.</p>
     `;
-
-    // Send email
     await sendEmail(
         applicant.email,
         "Verify your Email",
-        'This is a test email sent with Nodemailer using OAuth2.',
+        "Open the verification link to continue.",
         html
-);
-
+    );
     return {
-        success: true,
-        completed: false,
+        status: "waiting_for_input",
+        metadata: { token, verified: false, expiresAt },
         message: "Verification email sent. Waiting for the applicant to verify it."
     };
 }
 
 async function verifyToken(token) {
-    if (!token) {
-        throw new Error("Token not found.");
+    if (!token) throw new Error("Token not found.");
+    let execution = await VerificationStepExecution.findOne({ "metadata.token": token });
+    if (!execution) throw new Error("Invalid verification token.");
+    if (execution.status === "completed" && execution.metadata?.verified) {
+        return { success: true, completed: true, message: "Email already verified." };
     }
-    
-    // const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-    
-    const execution = await VerificationStepExecution.findOne({
-        "metadata.token": token,
-        // metadata:{
-        //     token:token
-        // },
-        status: "in_progress"
-    }).populate("verificationRequest");
-
-    if (!execution) {
-        throw new Error("Invalid verification token or already processed.");
-    }
-
-    if (
-        !execution.verificationRequest.currentStep.equals(
-            execution.workflowStep
-        )
-    ) {
-        throw new Error("This verification step is no longer active.");
-    }
-
-   
-
-    if (new Date() > new Date(execution.metadata.expiresAt)) {
-        execution.status = "failed";
-        await execution.save();
+    if (new Date() > new Date(execution.metadata?.expiresAt)) {
+        const coordinator = require("../../workflow-engine.service");
+        const claim = await coordinator.claimExecution(
+            execution.verificationRequest,
+            execution._id,
+            null,
+            { allowWaitingForInput: true }
+        );
+        if (claim.claimed) {
+            await coordinator.finalizeExecution({
+                requestId: execution.verificationRequest,
+                executionId: execution._id,
+                processingToken: claim.execution.processingToken,
+                outcome: {
+                    status: "failed",
+                    error: { code: "EMAIL_TOKEN_EXPIRED", message: "Verification token expired.", retryable: true }
+                }
+            });
+        }
         throw new Error("Verification token has expired.");
     }
-
-    execution.metadata = {
-        ...execution.metadata,
-        verified: true
-    };
-
-    execution.status = "completed";
-    execution.completedAt = new Date();
-
-    await execution.save();
-
-    // execution.metadata.verified = true;
-    // execution.status = "completed";
-    // execution.completedAt = new Date();
-
-    // await execution.save();
-
-    // Move workflow to next step
-    const workflowEngineService = require("../../workflow-engine.service");
-    const updatedRequest = await workflowEngineService.moveToNextStep(
-        execution.verificationRequest._id
+    const coordinator = require("../../workflow-engine.service");
+    const claim = await coordinator.claimExecution(
+        execution.verificationRequest,
+        execution._id,
+        null,
+        { allowWaitingForInput: true }
     );
-
+    if (!claim.claimed) {
+        execution = await VerificationStepExecution.findById(execution._id);
+        if (execution.status === "completed") {
+            return { success: true, completed: true, message: "Email already verified." };
+        }
+        throw new Error("Email verification is already being processed.");
+    }
+    const finalized = await coordinator.finalizeExecution({
+        requestId: execution.verificationRequest,
+        executionId: execution._id,
+        processingToken: claim.execution.processingToken,
+        outcome: { status: "completed", metadata: { verified: true, verifiedAt: new Date() } }
+    });
     return {
         success: true,
         completed: true,
         message: "Email verified successfully.",
-        verificationRequest: updatedRequest
+        verificationRequest: finalized.request
     };
 }
 
-module.exports = {
-    startEmailVerification,
-    execute,
-    verifyToken
-};
+module.exports = { startEmailVerification, execute, verifyToken };

@@ -59,6 +59,7 @@ workflowStepRouter.patch(
 workflowStepRouter.delete(
     "/:id",
     authMiddleware.authUser,
+    validateBody(schemas.archive),
     workflowStepController.deleteWorkflowStepController
 );
 
