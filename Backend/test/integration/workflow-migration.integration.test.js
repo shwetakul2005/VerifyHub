@@ -151,6 +151,15 @@ test("safe duplicate pending executions are archived before unique index install
     await applyWorkflowMigration({ dryRun: false });
     await installWorkflowIndexes();
 
+    const [workflowIndexes, stepIndexes, executionIndexes] = await Promise.all([
+        WorkflowTemplate.collection.listIndexes().toArray(),
+        WorkflowStep.collection.listIndexes().toArray(),
+        VerificationStepExecution.collection.listIndexes().toArray()
+    ]);
+    assert.equal(workflowIndexes.some((index) => index.name === "unique_workflow_family_version" && index.unique), true);
+    assert.equal(stepIndexes.some((index) => index.name === "unique_workflow_step_order" && index.unique), true);
+    assert.equal(executionIndexes.some((index) => index.name === "unique_request_step_execution" && index.unique), true);
+
     const executions = await VerificationStepExecution.find({
         verificationRequest: request._id, workflowStep: email._id
     }).lean();
