@@ -8,7 +8,6 @@ from typing import List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from .qa_chain import answer_question
 
 router = APIRouter(prefix="/rag", tags=["Policy Assistant (RAG)"])
 
@@ -28,11 +27,12 @@ def query_policy(request: QueryRequest):
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
     try:
+        from .qa_chain import answer_question
         result = answer_question(request.question)
-    except RuntimeError as e:
+    except RuntimeError:
         # Index not built yet
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"RAG pipeline error: {e}")
+        raise HTTPException(status_code=503, detail="Policy index is not ready.")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Policy lookup failed.")
 
     return QueryResponse(**result)
