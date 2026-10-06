@@ -8,6 +8,7 @@ from health_app import create_health_router
 from routers.face import router as face_router
 from routers.face_verification import router as face_verification_router
 from routers.image_quality import router as image_quality_router
+from routers.face_v1 import router as face_v1_router
 
 
 def _load_models():
@@ -38,6 +39,7 @@ def create_app(model_loader=None, include_rag=True):
     application.include_router(face_router)
     application.include_router(face_verification_router)
     application.include_router(image_quality_router)
+    application.include_router(face_v1_router)
     if include_rag:
         from RAG.router import router as rag_router
         application.include_router(rag_router)
