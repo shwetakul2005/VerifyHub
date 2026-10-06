@@ -43,6 +43,26 @@ test("document adapter reports waiting states and returns OCR evidence without a
     assert.deepEqual(processed.metadata.documentIds, ["document"]);
 });
 
+test("document adapter uses typed OCR evidence and omits full OCR text from new metadata", async () => {
+    const document = {
+        _id: "document", filePath: "synthetic.png", documentType: "PAN", metadata: {},
+        async save() {}
+    };
+    const outcome = await documentAdapter.execute({
+        request: { _id: "request" }, execution: { workflowStep: "step" }
+    }, {
+        findDocuments: async () => [document],
+        recognize: async () => ({ schemaVersion: "1.0", provider: "fake", confidence: 0.41,
+            text: "PAN ABCDE1234F", blocks: [] }),
+        parseDocument: async () => ({ panNumber: "ABCDE1234F" })
+    });
+    assert.equal(outcome.status, "waiting_for_review");
+    assert.equal(document.metadata.ocr.confidence, 0.41);
+    assert.equal(document.metadata.ocr.uncertain, true);
+    assert.equal(document.metadata.ocr.rawText, undefined);
+    assert.equal(document.metadata.extracted.result.panNumber, "ABCDE1234F");
+});
+
 test("face adapter returns completed or non-retryable failed outcomes without advancing", async () => {
     const context = {
         execution: {

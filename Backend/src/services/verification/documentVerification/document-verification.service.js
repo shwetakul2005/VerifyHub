@@ -1,10 +1,12 @@
 const VerificationDocument = require("../../../models/verification-document.model");
 const { findParser } = require("../ocr/findParser");
-const ocrService = require("../ocr/ocr.service");
+const { createOcrAdapter } = require("../ocr/ocr-adapter");
 
 async function execute(context, dependencies = {}) {
     const findDocuments = dependencies.findDocuments || ((query) => VerificationDocument.find(query));
-    const extractText = dependencies.extractText || ocrService.extractText;
+    const recognize = dependencies.recognize || (dependencies.extractText
+        ? async (filePath) => ({ text: await dependencies.extractText(filePath), provider: "legacy", confidence: null })
+        : createOcrAdapter().recognize);
     const parseDocument = dependencies.parseDocument || findParser;
     const documents = await findDocuments({
         verificationRequest: context.request._id,
@@ -18,11 +20,16 @@ async function execute(context, dependencies = {}) {
     }
     const unprocessed = documents.filter((document) => !document.metadata?.ocr);
     for (const document of unprocessed) {
-        const rawText = await extractText(document.filePath);
-        const parsed = await parseDocument(document.documentType, rawText);
+        const evidence = await recognize(document.filePath);
+        const parsed = await parseDocument(document.documentType, evidence.text);
         document.metadata = {
             ...(document.metadata || {}),
-            ocr: { rawText },
+            ocr: {
+                provider: evidence.provider,
+                providerVersion: evidence.providerVersion || null,
+                confidence: evidence.confidence,
+                uncertain: evidence.confidence === null || evidence.confidence < 0.75
+            },
             extracted: { result: parsed }
         };
         await document.save();
