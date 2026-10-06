@@ -21,7 +21,8 @@ async function execute(context, dependencies = {}) {
     const unprocessed = documents.filter((document) => !document.metadata?.ocr);
     for (const document of unprocessed) {
         const evidence = await recognize(document.filePath);
-        const parsed = await parseDocument(document.documentType, evidence.text);
+        const parsed = await parseDocument(document.documentType,
+            dependencies.parseDocument ? evidence.text : evidence);
         document.metadata = {
             ...(document.metadata || {}),
             ocr: {

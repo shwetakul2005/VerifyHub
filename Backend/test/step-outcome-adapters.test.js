@@ -63,6 +63,25 @@ test("document adapter uses typed OCR evidence and omits full OCR text from new 
     assert.equal(document.metadata.extracted.result.panNumber, "ABCDE1234F");
 });
 
+test("document adapter uses typed OCR evidence for PAN detection and field confidence", async () => {
+    const document = {
+        _id: "document", filePath: "synthetic.png", documentType: "PAN", metadata: {},
+        async save() {}
+    };
+    await documentAdapter.execute({
+        request: { _id: "request" }, execution: { workflowStep: "step" }
+    }, {
+        findDocuments: async () => [document],
+        recognize: async () => ({ schemaVersion: "1.0", provider: "fake", confidence: 0.95,
+            text: "INCOME TAX DEPARTMENT\nPERMANENT ACCOUNT NUMBER\nDEMO APPLICANT\nABCDE1234F",
+            blocks: [{ text: "ABCDE1234F", confidence: 0.81 }] })
+    });
+    assert.equal(document.metadata.extracted.result.panNumber, "ABCDE1234F");
+    assert.equal(document.metadata.extracted.result.evidence.typeMatches, true);
+    assert.equal(document.metadata.extracted.result.evidence.fields.panNumber.confidence, 0.81);
+    assert.equal(document.metadata.ocr.rawText, undefined);
+});
+
 test("face adapter returns completed or non-retryable failed outcomes without advancing", async () => {
     const context = {
         execution: {
