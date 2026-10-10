@@ -10,7 +10,9 @@ async function execute(context, dependencies = {}) {
     const parseDocument = dependencies.parseDocument || findParser;
     const documents = await findDocuments({
         verificationRequest: context.request._id,
-        workflowStep: context.execution.workflowStep
+        workflowStep: context.execution.workflowStep,
+        isDeleted: false,
+        isActive: true
     });
     if (documents.length === 0) {
         return {
@@ -33,6 +35,7 @@ async function execute(context, dependencies = {}) {
             },
             extracted: { result: parsed }
         };
+        document.processingStatus = "processed";
         await document.save();
     }
     return {

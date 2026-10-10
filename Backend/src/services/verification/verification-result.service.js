@@ -47,8 +47,7 @@ async function persistInSession({ organization, result, session, digestKey }) {
     const linked = await VerificationStepExecution.updateOne({
         _id: sanitized.execution,
         verificationRequest: sanitized.verificationRequest,
-        attempt: sanitized.attempt,
-        $or: [{ currentResult: null }, { currentResult: { $exists: false } }]
+        attempt: sanitized.attempt
     }, { $set: { currentResult: stored._id } }, { session });
     if (linked.modifiedCount !== 1) {
         throw new Error("The execution attempt no longer matches the verification result.");
