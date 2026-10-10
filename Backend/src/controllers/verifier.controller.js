@@ -1,5 +1,27 @@
 const verifierService = require("../services/verifier.service");
 const verificationDocumentService = require("../services/verification/documentVerification/view-document.service");
+const workflowEngineService = require("../services/workflow-engine.service");
+
+async function overrideResultController(req, res) {
+    try {
+        const decision = await workflowEngineService.overrideVerificationResult(
+            req.params.resultId,
+            req.user.id,
+            { ...req.body, idempotencyKey: req.idempotencyKey }
+        );
+        return res.status(200).json({
+            success: true,
+            message: "Final verification decision recorded.",
+            decision
+        });
+    } catch (error) {
+        return res.status(error.statusCode || 400).json({
+            success: false,
+            code: error.code || "DECISION_OVERRIDE_FAILED",
+            message: error.message
+        });
+    }
+}
 
 async function approveController(req, res) {
     const documentId = req.params.id;
@@ -140,5 +162,6 @@ module.exports = {
     getPendingDocumentsController,
     getVerificationRequestController,
     rejectController,
-    viewDocumentController
+    viewDocumentController,
+    overrideResultController
 }

@@ -22,6 +22,7 @@ const auditLogSchema = new mongoose.Schema({
             "execution_transition",
             "review_decision",
             "verification_result_created",
+            "decision_overridden",
             "request_archived",
             "step_added",
             "step_updated",
