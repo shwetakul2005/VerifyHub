@@ -41,6 +41,8 @@ const VerificationStepExecutionSchema = new mongoose.Schema({
     },
     processingToken: { type: String, default: null },
     leaseExpiresAt: { type: Date, default: null },
+    currentResult: { type: mongoose.Schema.Types.ObjectId, ref: "VerificationResult", default: null },
+    currentEvidenceAttempt: { type: Number, min: 0, default: 0 },
     cancelledAt: { type: Date, default: null },
     cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     cancellationReason: { type: String, default: null },

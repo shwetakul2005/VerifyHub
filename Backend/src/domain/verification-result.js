@@ -80,7 +80,10 @@ const verificationResultSchema = z.strictObject({
 }).superRefine((result, context) => {
     for (const identifier of ["panNumber", "aadhaarNumber"]) {
         const masked = result.document.fields[identifier]?.valueMasked;
-        if (masked && (masked.match(/\*/g) || []).length < 4) {
+        const validMask = identifier === "panNumber"
+            ? /^[A-Z]{5}\*{4}[A-Z]$/.test(masked || "")
+            : /^\*{8}[0-9]{4}$/.test(masked || "");
+        if (masked && !validMask) {
             context.addIssue({ code: "custom", path: ["document", "fields", identifier, "valueMasked"], message: "Identity numbers must be masked." });
         }
     }
