@@ -103,3 +103,23 @@ test("face adapter returns completed or non-retryable failed outcomes without ad
     assert.equal(mismatch.status, "failed");
     assert.equal(mismatch.error.retryable, false);
 });
+
+test("face adapter runs the versioned pipeline and preserves manual review decisions", async () => {
+    const context = {
+        request: { _id: "request" },
+        execution: { _id: "execution", attempt: 1, metadata: { liveFilePath: "selfie.png", liveMimeType: "image/png" } }
+    };
+    let received;
+    const outcome = await faceAdapter.execute(context, {
+        findDocument: async () => ({ _id: "document", filePath: "document.png", mimeType: "image/png",
+            fileName: "document.png", documentType: "PAN" }),
+        runPipeline: async (input) => {
+            received = input;
+            return { status: "waiting_for_review", verificationResult: { automaticDecision: "manual_review" } };
+        }
+    });
+    assert.equal(received.documentId, "document");
+    assert.equal(received.declaredType, "PAN");
+    assert.equal(received.selfieFile.path, "selfie.png");
+    assert.equal(outcome.status, "waiting_for_review");
+});

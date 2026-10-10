@@ -1,6 +1,8 @@
 const fs = require("fs");
 const VerificationRequest = require("../../../models/verification-request.model");
 const VerificationStepExecution = require("../../../models/verification-step-execution.model");
+const VerificationDocument = require("../../../models/verification-document.model");
+const { runVerificationPipeline } = require("../verification-pipeline.service");
 
 async function getRequestForFaceVerification(requestId, applicantId) {
     const request = await VerificationRequest.findById(requestId).populate("applicant");
@@ -74,7 +76,7 @@ async function submitFaceVerificationStep(requestId, applicantId, files) {
         allowWaitingForInput: true
     });
     return {
-        success: result.outcome?.status === "completed",
+        success: ["completed", "waiting_for_review"].includes(result.outcome?.status),
         completed: result.outcome?.status === "completed",
         message: result.outcome?.message || "Face verification is already being processed.",
         result: result.outcome?.result,
@@ -84,41 +86,49 @@ async function submitFaceVerificationStep(requestId, applicantId, files) {
 }
 
 async function execute(context, dependencies = {}) {
-    const invokeMl = dependencies.callMlService || callMlService;
     const metadata = context.execution.metadata || {};
-    if (!metadata.documentFilePath || !metadata.liveFilePath) {
+    if (dependencies.callMlService) {
+        if (!metadata.documentFilePath || !metadata.liveFilePath) {
+            return { status: "waiting_for_input", message: "Waiting for the applicant to submit the document image and live selfie." };
+        }
+        const mlResult = await dependencies.callMlService(
+            { path: metadata.documentFilePath, mimetype: metadata.documentMimeType || "image/jpeg", originalname: metadata.documentFileName || "document.jpg" },
+            { path: metadata.liveFilePath, mimetype: metadata.liveMimeType || "image/jpeg", originalname: metadata.liveFileName || "live.jpg" }
+        );
+        if (mlResult?.verified) return { status: "completed", metadata: { mlResult, verifiedAt: new Date() }, result: mlResult,
+            message: mlResult.message || "Face verification completed successfully." };
+        return { status: "failed", metadata: { mlResult, verifiedAt: new Date() },
+            error: { code: "FACE_MISMATCH", message: mlResult?.message || "Face comparison did not match.", retryable: false },
+            result: mlResult, message: mlResult?.message || "Face verification failed." };
+    }
+    if (!metadata.liveFilePath) {
         return {
             status: "waiting_for_input",
-            message: "Waiting for the applicant to submit the document image and live selfie."
+            message: "Waiting for the applicant to submit a selfie."
         };
     }
-    const mlResult = await invokeMl(
-        {
-            path: metadata.documentFilePath,
-            mimetype: metadata.documentMimeType || "image/jpeg",
-            originalname: metadata.documentFileName || "document.jpg"
-        },
-        {
-            path: metadata.liveFilePath,
-            mimetype: metadata.liveMimeType || "image/jpeg",
-            originalname: metadata.liveFileName || "live.jpg"
-        }
-    );
-    if (mlResult?.verified) {
-        return {
-            status: "completed",
-            metadata: { mlResult, verifiedAt: new Date() },
-            result: mlResult,
-            message: mlResult.message || "Face verification completed successfully."
-        };
+    const findDocument = dependencies.findDocument || (() => VerificationDocument.findOne({
+        verificationRequest: context.request._id, isDeleted: false
+    }).sort({ createdAt: -1 }));
+    const document = await findDocument();
+    if (!document) return { status: "waiting_for_input", message: "A supported identity document is required before selfie analysis." };
+    const declaredType = document.documentType === "Aadhaar" ? "AADHAAR" : document.documentType;
+    if (!["PAN", "AADHAAR"].includes(declaredType)) {
+        return { status: "failed", error: { code: "DOCUMENT_UNSUPPORTED_FORMAT",
+            message: "Only PAN and Aadhaar are supported by this pipeline.", retryable: false } };
     }
-    return {
-        status: "failed",
-        metadata: { mlResult, verifiedAt: new Date() },
-        error: { code: "FACE_MISMATCH", message: mlResult?.message || "Face comparison did not match.", retryable: false },
-        result: mlResult,
-        message: mlResult?.message || "Face verification failed."
-    };
+    const runPipeline = dependencies.runPipeline || runVerificationPipeline;
+    return runPipeline({
+        requestId: context.request._id,
+        executionId: context.execution._id,
+        attempt: context.execution.attempt,
+        documentId: document._id,
+        declaredType,
+        documentFile: { path: document.filePath, mimetype: document.mimeType, originalname: document.fileName },
+        selfieFile: { path: metadata.liveFilePath, mimetype: metadata.liveMimeType || "image/jpeg",
+            originalname: metadata.liveFileName || "selfie.jpg" },
+        digestKey: process.env.VERIFICATION_RESULT_DIGEST_KEY
+    });
 }
 
 module.exports = {

@@ -12,6 +12,8 @@ const {
     planVerificationResultMigration,
     applyVerificationResultMigration
 } = require("../../src/migrations/verification-result-migration");
+const AuditLog = require("../../src/models/audit-log.model");
+const coordinator = require("../../src/services/workflow-engine.service");
 
 test.before(startDatabase);
 test.beforeEach(clearDatabase);
@@ -92,6 +94,27 @@ test("persistence rolls back when the execution attempt no longer matches", asyn
         /execution attempt/i
     );
     assert.equal(await VerificationResult.countDocuments(), 0);
+});
+
+test("result persistence and workflow finalization commit in one transaction", async () => {
+    const f = await fixture();
+    await VerificationStepExecution.updateOne({ _id: f.execution._id }, { $set: { processingToken: "claim-token" } });
+    await VerificationRequest.updateOne({ _id: f.request }, {
+        $set: { currentExecution: f.execution._id, currentStep: f.execution.workflowStep }
+    });
+    const outcome = {
+        status: "waiting_for_review",
+        verificationResult: { ...validResult(f.request, f.execution._id, f.document),
+            automaticDecision: "manual_review", finalDecision: "manual_review",
+            reasonCodes: ["FACE_SIMILARITY_UNCERTAIN"] }
+    };
+    const finalized = await coordinator.finalizeExecution({
+        requestId: f.request, executionId: f.execution._id, processingToken: "claim-token", outcome
+    });
+    const result = await VerificationResult.findOne({ execution: f.execution._id }).lean();
+    assert.equal(result.automaticDecision, "manual_review");
+    assert.equal(String(finalized.execution.currentResult), String(result._id));
+    assert.equal(await AuditLog.countDocuments({ action: "verification_result_created", target: result._id }), 1);
 });
 
 test("legacy OCR metadata is preflighted and backfilled without copying raw PII", async () => {

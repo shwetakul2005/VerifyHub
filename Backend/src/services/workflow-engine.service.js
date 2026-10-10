@@ -4,6 +4,7 @@ const VerificationRequest = require("../models/verification-request.model");
 const VerificationStepExecution = require("../models/verification-step-execution.model");
 const VerificationDocument = require("../models/verification-document.model");
 const AuditLog = require("../models/audit-log.model");
+const { persistInSession: persistVerificationResultInSession } = require("./verification/verification-result.service");
 const { requireRequestAccess, requireDocumentReviewer, AccessError, idEquals } = require("./authorization.service");
 const {
     REQUEST_STATES,
@@ -204,6 +205,30 @@ async function finalizeExecution({ requestId, executionId, processingToken, outc
             if (execution.processingToken !== processingToken) {
                 throw new WorkflowCommandConflictError("Execution claim is no longer valid.", "INVALID_PROCESSING_CLAIM");
             }
+            let verificationResult = null;
+            if (outcome.verificationResult) {
+                verificationResult = await persistVerificationResultInSession({
+                    organization: request.organization,
+                    result: outcome.verificationResult,
+                    digestKey: process.env.VERIFICATION_RESULT_DIGEST_KEY,
+                    session
+                });
+                await AuditLog.create([{
+                    organization: request.organization,
+                    action: "verification_result_created",
+                    actor: actorId || undefined,
+                    actorType: actorId ? "user" : "system",
+                    target: verificationResult._id,
+                    targetModel: "VerificationResult",
+                    details: {
+                        schemaVersion: verificationResult.schemaVersion,
+                        pipelineVersion: verificationResult.pipelineVersion,
+                        attempt: verificationResult.attempt,
+                        automaticDecision: verificationResult.automaticDecision,
+                        reasonCodes: verificationResult.reasonCodes
+                    }
+                }], { session });
+            }
             const settlesSameStateClaim = execution.status === targetStatus;
             if (!settlesSameStateClaim) assertExecutionTransition(execution.status, targetStatus);
             const now = new Date();
@@ -278,7 +303,7 @@ async function finalizeExecution({ requestId, executionId, processingToken, outc
                 }
                 if (!updatedRequest) throw new WorkflowCommandConflictError("Request advanced concurrently.");
             }
-            result = { idempotent: false, request: updatedRequest, execution: updatedExecution };
+            result = { idempotent: false, request: updatedRequest, execution: updatedExecution, verificationResult };
         });
     } finally {
         await session.endSession();

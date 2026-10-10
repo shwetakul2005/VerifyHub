@@ -70,4 +70,4 @@ async function persistVerificationResult(input) {
     }
 }
 
-module.exports = { maskIdentifier, serializeVerificationResult, persistVerificationResult };
+module.exports = { maskIdentifier, serializeVerificationResult, persistVerificationResult, persistInSession };
