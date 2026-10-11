@@ -1,589 +1,175 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-
-import {
-    getReqById,
-    getDocuments,
-    uploadVerificationDocument,
-    startEmailVerification,
-    getApplicantWorkflow,
-    submitFaceVerification
-} from "../../api/applicant.api";
+import DecisionSummary from "../../components/verification/DecisionSummary";
+import SelfieCapture from "../../components/verification/SelfieCapture";
+import { getApplicantWorkflow, getDocuments, getReqById, startEmailVerification, submitFaceVerification, uploadVerificationDocument } from "../../api/applicant.api";
 import { getRequestStatusMeta } from "./requestStatus";
 
 function VerificationRequest() {
     const { id } = useParams();
-
     const [verification, setVerification] = useState(null);
     const [documents, setDocuments] = useState([]);
     const [workflow, setWorkflow] = useState(null);
-
     const [loading, setLoading] = useState(true);
-    const [uploading, setUploading] = useState(false);
-    const [sendingEmail, setSendingEmail] = useState(false);
-    const [submittingFaceVerification, setSubmittingFaceVerification] = useState(false);
-
-    const [error, setError] = useState(null);
+    const [busy, setBusy] = useState("");
+    const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
-
     const [title, setTitle] = useState("");
     const [file, setFile] = useState(null);
     const [documentImage, setDocumentImage] = useState(null);
-    const [liveSelfie, setLiveSelfie] = useState(null);
+    const [selfie, setSelfie] = useState(null);
+    const [latestResult, setLatestResult] = useState(null);
 
-    // Fetch verification request
-    const fetchRequest = useCallback(async () => {
-        try {
-            setLoading(true);
-            const data = await getReqById(id);
-
-            console.log("Verification request:", data);
-
-            setVerification(data);
-        } catch (error) {
-            console.error(
-                "Failed to fetch verification request:",
-                error
-            );
-
-            setError(
-                error.response?.data?.message ||
-                "Failed to load verification request."
-            );
-        } finally {
-            setLoading(false);
-        }
-    }, [id]);
-
-    const fetchDocuments = useCallback(async () => {
-        try {
-            const data = await getDocuments(id);
-            setDocuments(data);
-        } catch (error) {
-            if (error.response?.status !== 400) {
-                setError(
-                    error.response?.data?.message ||
-                    "Failed to load uploaded documents."
-                );
-            }
-        }
-    }, [id]);
-
-    const fetchWorkflow = useCallback(async () => {
-        console.log(`id is ${id}`);
-        try {
-            const data = await getApplicantWorkflow(id);
-            setWorkflow(data);
-        } catch (error) {
-            console.error("Failed to fetch applicant workflow:", error);
-            setError(
-                error.response?.data?.message ||
-                "Failed to load workflow details."
-            );
-        }
+    const refresh = useCallback(async () => {
+        const [request, uploadedDocuments, flow] = await Promise.all([
+            getReqById(id), getDocuments(id), getApplicantWorkflow(id)
+        ]);
+        setVerification(request);
+        setDocuments(uploadedDocuments);
+        setWorkflow(flow);
     }, [id]);
 
     useEffect(() => {
         let active = true;
-        // Begin network work after the effect callback; state changes occur
-        // when each request settles, not synchronously during the effect.
-        Promise.resolve().then(() => {
-            if (!active) return;
-            fetchRequest();
-            fetchDocuments();
-            fetchWorkflow();
+        Promise.resolve().then(async () => {
+            try { await refresh(); }
+            catch (requestError) {
+                if (active) setError(requestError.response?.data?.message || "Unable to load this verification request.");
+            } finally { if (active) setLoading(false); }
         });
         return () => { active = false; };
-    }, [fetchRequest, fetchDocuments, fetchWorkflow]);
+    }, [refresh]);
 
-    // Handle file selection
-    const handleFileChange = (event) => {
-        const selectedFile = event.target.files[0];
-
-        if (!selectedFile) {
-            return;
-        }
-
-        setFile(selectedFile);
-        setError(null);
-        setSuccess("");
+    const runAction = async (name, action, message) => {
+        setBusy(name); setError(""); setSuccess("");
+        try {
+            const response = await action();
+            setSuccess(response?.message || message);
+            if (response?.result) setLatestResult(response.result);
+            await refresh();
+            return true;
+        } catch (actionError) {
+            setError(actionError.response?.data?.message || "The operation could not be completed. Please try again.");
+            return false;
+        } finally { setBusy(""); }
     };
 
-    // Handle upload
     const handleUpload = async (event) => {
         event.preventDefault();
-
-        setError(null);
-        setSuccess("");
-
-        if (!title.trim()) {
-            setError("Please enter a document title.");
-            return;
+        const documentType = verification?.currentStep?.config?.documentType;
+        if (!title.trim() || !file || !documentType) {
+            setError("Enter a title and select the required document before uploading."); return;
         }
-
-        if (!file) {
-            setError("Please select a document.");
-            return;
-        }
-
-        const documentType =
-            verification?.currentStep?.config?.documentType;
-
-        if (!documentType) {
-            setError("Document type is not available.");
-            return;
-        }
-
-        try {
-            setUploading(true);
-
-            console.log("Uploading document:", {
-                requestId: id,
-                title,
-                documentType,
-                file
-            });
-
-            await uploadVerificationDocument(
-                id,
-                file,
-                title,
-                documentType
-            );
-
-            setSuccess("Document uploaded successfully.");
-
-            // Clear form
-            setTitle("");
-            setFile(null);
-
-            // Reset file input
-            event.target.reset();
-
-            // Fetch updated verification request
-            await fetchRequest();
-            await fetchDocuments();
-
-        } catch (error) {
-            console.error(
-                "Document upload failed:",
-                error
-            );
-
-            setError(
-                error.response?.data?.message ||
-                "Failed to upload document."
-            );
-        } finally {
-            setUploading(false);
-        }
+        const complete = await runAction("document", () => uploadVerificationDocument(id, file, title.trim(), documentType), "Document uploaded safely.");
+        if (complete) { setTitle(""); setFile(null); event.currentTarget.reset(); }
     };
 
-    const handleEmailVerification = async () => {
-        setError(null);
-        setSuccess("");
-
-        try {
-            setSendingEmail(true);
-            await startEmailVerification(id);
-            setSuccess("Verification email sent. Please check your inbox.");
-        } catch (error) {
-            setError(
-                error.response?.data?.message ||
-                "Failed to send verification email."
-            );
-        } finally {
-            setSendingEmail(false);
-        }
-    };
-
-    const handleFaceVerificationSubmit = async (event) => {
+    const handleFaceSubmit = async (event) => {
         event.preventDefault();
-
-        setError(null);
-        setSuccess("");
-
-        if (!documentImage) {
-            setError("Please upload the document image.");
-            return;
+        if (!documentImage || !selfie) {
+            setError("Select a clear document image and capture or choose a selfie."); return;
         }
-
-        if (!liveSelfie) {
-            setError("Please upload your live selfie.");
-            return;
-        }
-
-        try {
-            setSubmittingFaceVerification(true);
-            const response = await submitFaceVerification(id, documentImage, liveSelfie);
-
-            if (response?.success) {
-                setSuccess(response.message || "Face verification completed successfully.");
-            } else {
-                setError(response?.message || "Face verification failed.");
-            }
-
-            await fetchRequest();
-            await fetchWorkflow();
-            await fetchDocuments();
-
-            setDocumentImage(null);
-            setLiveSelfie(null);
-            event.target.reset();
-        } catch (error) {
-            setError(
-                error.response?.data?.message ||
-                "Failed to verify your face."
-            );
-        } finally {
-            setSubmittingFaceVerification(false);
-        }
+        const complete = await runAction("identity", () => submitFaceVerification(id, documentImage, selfie), "Evidence processed.");
+        if (complete) { setDocumentImage(null); setSelfie(null); event.currentTarget.reset(); }
     };
 
-    const handleWorkflowStepClick = (step) => {
-        if (step.status === "completed") {
-            setSuccess(`${step.title} has already been completed.`);
-            return;
-        }
-
-        if (step.status === "failed") {
-            setError(`${step.title} failed and cannot be edited. Please review the next available step.`);
-            return;
-        }
-
-        if (step.status === "current") {
-            setSuccess(`Continue with ${step.title}.`);
-
-            return;
-        }
-
-        setError("This step is locked until the previous step is completed.");
-    };
-
-    if (loading) {
-        return <div>Loading verification request...</div>;
-    }
-
-    if (error && !verification) {
-        return <div>{error}</div>;
-    }
-
-    if (!verification) {
-        return <div>Verification request not found.</div>;
-    }
+    if (loading) return <main className="verification-shell">Loading verification request…</main>;
+    if (!verification) return <main className="verification-shell"><p className="form-error">{error || "Verification request not found."}</p></main>;
 
     const currentStep = verification.currentStep;
-    const requestStatusMeta = getRequestStatusMeta(verification);
-    const pendingDocument = documents.find(
-        (document) => document.reviewStatus === "pending"
-    );
-    const currentStepDocument = documents.find(
-        (document) => document.workflowStep?._id === currentStep?._id
-    );
+    const status = getRequestStatusMeta(verification);
+    const summary = latestResult || verification.verificationSummary;
+    const currentDocument = documents.find((item) => item.workflowStep?._id === currentStep?._id);
 
     return (
-        <main>
-            <h1>Verification Request</h1>
+        <main className="verification-shell">
+            <header className="verification-header">
+                <div>
+                    <p className="eyebrow">VerifyHub applicant portal</p>
+                    <h1>{verification.workflowTemplate?.name || "Identity verification"}</h1>
+                    <p className="muted">Complete each step in order. Sensitive identifiers are masked in stored results.</p>
+                </div>
+                <span className={`status-chip status-${verification.status}`}>{verification.status.replaceAll("_", " ")}</span>
+            </header>
 
-            {/* Request information */}
+            {error && <p className="form-error" role="alert">{error}</p>}
+            {success && <p className="form-success" role="status">{success}</p>}
+            {summary && <DecisionSummary summary={summary} />}
 
-            <section>
-                <h2>Request Information</h2>
+            <div className="verification-grid">
+                <div className="verification-stack">
+                    {!status.isTerminal && currentStep && (
+                        <section className="verification-card">
+                            <p className="eyebrow">Current step</p>
+                            <h2>{currentStep.title}</h2>
+                            <p className="muted">{currentStep.description}</p>
 
-                <p>
-                    <strong>Organization:</strong>{" "}
-                    {verification.organization?.name}
-                </p>
+                            {currentStep.stepType === "email" && (
+                                <button type="button" onClick={() => runAction("email", () => startEmailVerification(id), "Verification email sent.")} disabled={Boolean(busy)}>
+                                    {busy === "email" ? "Sending…" : "Send verification email"}
+                                </button>
+                            )}
 
-                <p>
-                    <strong>Workflow:</strong>{" "}
-                    {verification.workflowTemplate?.name}
-                </p>
+                            {currentStep.stepType === "document" && (
+                                currentDocument?.reviewStatus === "pending" ? <p className="form-success">{currentDocument.title} is waiting for verifier review.</p> : (
+                                    <form className="form-grid" onSubmit={handleUpload}>
+                                        <p>Required document: <strong>{currentStep.config?.documentType}</strong></p>
+                                        <label className="form-field">Document title
+                                            <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={100} disabled={Boolean(busy)} />
+                                        </label>
+                                        <label className="file-label">Document file
+                                            <input type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={(event) => setFile(event.target.files?.[0] || null)} disabled={Boolean(busy)} />
+                                        </label>
+                                        <p className="field-help">Use a sharp, evenly lit image with all corners visible. PDF, JPG and PNG are accepted.</p>
+                                        <button type="submit" disabled={Boolean(busy)}>{busy === "document" ? "Uploading…" : "Upload document"}</button>
+                                    </form>
+                                )
+                            )}
 
-                <p>
-                    <strong>Status:</strong>{" "}
-                    {verification.status}
-                </p>
-            </section>
-
-            <hr />
-
-            {workflow?.steps?.length > 0 && (
-                <section>
-                    <h2>Verification Flow</h2>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                        {workflow.steps.map((step) => (
-                            <button
-                                key={step.id}
-                                type="button"
-                                onClick={() => handleWorkflowStepClick(step)}
-                                disabled={step.status === "pending" || step.status === "failed"}
-                                style={{
-                                    textAlign: "left",
-                                    padding: "12px 16px",
-                                    borderRadius: "10px",
-                                    border: "1px solid #d0d7de",
-                                    backgroundColor:
-                                        step.status === "completed"
-                                            ? "#e6ffed"
-                                            : step.status === "current"
-                                                ? "#fff7d6"
-                                                : step.status === "failed"
-                                                    ? "#ffebe9"
-                                                    : "#f6f8fa",
-                                    cursor: step.status === "pending" || step.status === "failed" ? "not-allowed" : "pointer",
-                                    opacity: step.status === "pending" || step.status === "failed" ? 0.8 : 1,
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    gap: "12px"
-                                }}
-                            >
-                                <div>
-                                    <div style={{ fontWeight: 700 }}>
-                                        {step.stepOrder}. {step.title}
+                            {currentStep.stepType === "face_verification" && (
+                                <form className="form-grid" onSubmit={handleFaceSubmit}>
+                                    <div>
+                                        <h3>Document photo</h3>
+                                        <label className="file-label">Choose the identity document image
+                                            <input type="file" accept="image/*" onChange={(event) => setDocumentImage(event.target.files?.[0] || null)} disabled={Boolean(busy)} />
+                                        </label>
                                     </div>
-                                    <div style={{ fontSize: "0.9rem", color: "#57606a" }}>
-                                        {step.stepType}
-                                    </div>
-                                </div>
-
-                                <span
-                                    style={{
-                                        fontSize: "0.8rem",
-                                        padding: "4px 8px",
-                                        borderRadius: "999px",
-                                        backgroundColor:
-                                            step.status === "completed"
-                                                ? "#1a7f37"
-                                                : step.status === "current"
-                                                    ? "#b7791f"
-                                                    : step.status === "failed"
-                                                        ? "#cf222e"
-                                                        : "#6e7781",
-                                        color: "white",
-                                        fontWeight: 600
-                                    }}
-                                >
-                                    {step.status === "completed"
-                                        ? "Completed"
-                                        : step.status === "current"
-                                            ? "Current"
-                                            : step.status === "failed"
-                                                ? "Failed"
-                                                : "Pending"}
-                                </span>
-                            </button>
-                        ))}
-                    </div>
-                </section>
-            )}
-
-            {!requestStatusMeta.isCompleted && (
-                <>
-                    {/* Current step */}
-
-                    <section>
-                        <h2>{currentStep?.title}</h2>
-
-                        <p>
-                            {currentStep?.description}
-                        </p>
-
-                        <p>
-                            <strong>Step type:</strong>{" "}
-                            {currentStep?.stepType}
-                        </p>
-                    </section>
-                </>
-            )}
-
-            {/* Error */}
-
-            {error && (
-                <p>
-                    <strong>Error:</strong> {error}
-                </p>
-            )}
-
-            {/* Success */}
-
-            {success && (
-                <p>
-                    <strong>{success}</strong>
-                </p>
-            )}
-
-            {/* EMAIL STEP */}
-
-            {currentStep?.stepType === "email" && (
-                <section id="email-step-section">
-                    <h2>Email Verification</h2>
-
-                    <p>
-                        Please verify your email address.
-                    </p>
-
-                    <button
-                        type="button"
-                        onClick={handleEmailVerification}
-                        disabled={sendingEmail}
-                    >
-                        {sendingEmail ? "Sending..." : "Verify Email"}
-                    </button>
-                </section>
-            )}
-
-            {/* DOCUMENT STEP */}
-
-            {currentStep?.stepType === "document" && (
-                <section id="document-step-section">
-                    <h2>Document Verification</h2>
-
-                    <p>
-                        Required document:{" "}
-                        <strong>
-                            {currentStep?.config?.documentType}
-                        </strong>
-                    </p>
-
-                    {currentStepDocument?.reviewStatus === "pending" ? (
-                        <p>
-                            Your document is uploaded and waiting for verifier review.
-                        </p>
-                    ) : (
-                    <form onSubmit={handleUpload}>
-
-                        <div>
-                            <label>
-                                Document Title
-                            </label>
-
-                            <input
-                                type="text"
-                                value={title}
-                                onChange={(event) =>
-                                    setTitle(event.target.value)
-                                }
-                                placeholder="Enter document title"
-                                disabled={uploading}
-                            />
-                        </div>
-
-                        <br />
-
-                        <div>
-                            <label>
-                                Select Document
-                            </label>
-
-                            <input
-                                type="file"
-                                accept=".jpg,.jpeg,.png,.pdf"
-                                onChange={handleFileChange}
-                                disabled={uploading}
-                            />
-                        </div>
-
-                        <br />
-
-                        {file && (
-                            <p>
-                                Selected file:{" "}
-                                <strong>
-                                    {file.name}
-                                </strong>
-                            </p>
-                        )}
-
-                        <button
-                            type="submit"
-                            disabled={uploading}
-                        >
-                            {uploading
-                                ? "Uploading..."
-                                : "Upload Document"}
-                        </button>
-
-                    </form>
+                                    <div><h3>Selfie</h3><SelfieCapture value={selfie} onChange={setSelfie} disabled={Boolean(busy)} /></div>
+                                    <button type="submit" disabled={Boolean(busy)}>{busy === "identity" ? "Processing securely…" : "Compare identity evidence"}</button>
+                                </form>
+                            )}
+                        </section>
                     )}
-                </section>
-            )}
 
-            {currentStep?.stepType === "face_verification" && (
-                <section id="face-verification-step-section">
-                    <h2>Face Verification</h2>
+                    {status.isTerminal && <section className="verification-card"><h2>{status.banner}</h2><p>{status.message}</p></section>}
+                </div>
 
-                    <p>
-                        Upload the document image and a live selfie to verify your identity.
-                    </p>
+                <aside className="verification-stack">
+                    <section className="verification-card">
+                        <h2>Request details</h2>
+                        <dl className="detail-list">
+                            <div><dt>Organization</dt><dd>{verification.organization?.name || "—"}</dd></div>
+                            <div><dt>Status</dt><dd>{verification.status.replaceAll("_", " ")}</dd></div>
+                            <div><dt>Documents</dt><dd>{documents.length}</dd></div>
+                            <div><dt>Request ID</dt><dd>{verification._id}</dd></div>
+                        </dl>
+                    </section>
 
-                    <form onSubmit={handleFaceVerificationSubmit}>
-                        <div>
-                            <label>Document image</label>
-                            <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(event) => setDocumentImage(event.target.files[0])}
-                                disabled={submittingFaceVerification}
-                            />
-                        </div>
-
-                        <br />
-
-                        <div>
-                            <label>Live selfie</label>
-                            <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(event) => setLiveSelfie(event.target.files[0])}
-                                disabled={submittingFaceVerification}
-                            />
-                        </div>
-
-                        <br />
-
-                        <button type="submit" disabled={submittingFaceVerification}>
-                            {submittingFaceVerification ? "Verifying..." : "Submit Face Verification"}
-                        </button>
-                    </form>
-                </section>
-            )}
-
-            {pendingDocument && currentStep?.stepType !== "document" && (
-                <section id="verification-step-section">
-                    <h2>Document Submitted</h2>
-                    <p>
-                        {pendingDocument.title} is waiting for verifier review.
-                        You may continue with the current verification step.
-                    </p>
-                </section>
-            )}
-
-            {/* COMPLETED */}
-
-            {(verification.status === "completed" || !currentStep) && (
-                <section>
-                    <h2>{requestStatusMeta.banner}</h2>
-
-                    <p>
-                        {requestStatusMeta.message}
-                    </p>
-                </section>
-            )}
-
-            {/* REJECTED */}
-
-            {verification.status === "rejected" && (
-                <section>
-                    <h2>{requestStatusMeta.banner}</h2>
-
-                    <p>
-                        {requestStatusMeta.message}
-                    </p>
-                </section>
-            )}
+                    {workflow?.steps?.length > 0 && (
+                        <section className="verification-card">
+                            <h2>Verification flow</h2>
+                            <div className="step-list">
+                                {workflow.steps.map((step) => (
+                                    <div key={step.id} className={`step-item step-${step.status}`}>
+                                        <div><strong>{step.stepOrder}. {step.title}</strong><div className="muted">{step.stepType.replaceAll("_", " ")}</div></div>
+                                        <span className={`status-chip status-${step.status}`}>{step.status}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+                </aside>
+            </div>
         </main>
     );
 }

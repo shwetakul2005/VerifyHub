@@ -11,6 +11,10 @@ const VerificationStepExecution = require("../../src/models/verification-step-ex
 const VerificationDocument = require("../../src/models/verification-document.model");
 const AuditLog = require("../../src/models/audit-log.model");
 const verifierService = require("../../src/services/verifier.service");
+const VerificationResult = require("../../src/models/verification-result.model");
+const VerificationDecision = require("../../src/models/verification-decision.model");
+const coordinator = require("../../src/services/workflow-engine.service");
+const verificationRequestService = require("../../src/services/verification-request.service");
 
 test.before(startDatabase);
 test.afterEach(clearDatabase);
@@ -84,7 +88,32 @@ async function fixture(label) {
         fileSize: 10,
         reviewStatus: "pending"
     });
-    return { verifier, request, executions, document };
+    return { applicant, verifier, request, executions, document };
+}
+
+async function createAutomaticResult(data, automaticDecision = "manual_review") {
+    const payload = {
+        schemaVersion: "1.0", pipelineVersion: "document-face-v1",
+        componentVersions: { ocr: "v1", documentQuality: "v1", selfieQuality: "v1", faceMatcher: "v1", decisionPolicy: "v1" },
+        verificationRequest: String(data.request._id), execution: String(data.executions[0]._id), attempt: 1,
+        document: { documentId: String(data.document._id), declaredType: "PAN", detectedType: "PAN",
+            typeConfidence: 0.9, typeMatches: true,
+            quality: { score: 0.8, checks: [{ code: "SHARPNESS", passed: true, score: 0.8 }] },
+            fields: { panNumber: { valueMasked: "ABCDE****F", valueHash: "digest", confidence: 0.8, source: "ocr", formatValid: true } },
+            face: { detected: true, count: 1, confidence: 0.9 } },
+        selfie: { quality: { score: 0.8, checks: [{ code: "BRIGHTNESS", passed: true, score: 0.8 }] },
+            face: { detected: true, count: 1, confidence: 0.9 } },
+        faceComparison: { similarity: 0.5, threshold: 0.8, matched: false, model: "face", modelVersion: "1" },
+        thresholds: { documentQualityMin: 0.7, selfieQualityMin: 0.7, fieldConfidenceMin: 0.75 },
+        automaticDecision, finalDecision: automaticDecision, reasonCodes: ["FACE_SIMILARITY_UNCERTAIN"],
+        createdAt: "2026-10-10T00:00:00.000Z"
+    };
+    const result = await VerificationResult.create({ organization: data.request.organization,
+        verificationRequest: data.request._id, execution: data.executions[0]._id, document: data.document._id,
+        attempt: 1, schemaVersion: "1.0", pipelineVersion: "document-face-v1",
+        automaticDecision, finalDecision: automaticDecision, reasonCodes: payload.reasonCodes, result: payload });
+    await VerificationStepExecution.updateOne({ _id: data.executions[0]._id }, { $set: { currentResult: result._id } });
+    return result;
 }
 
 test("simultaneous approvals produce one decision and advance atomically", async () => {
@@ -127,4 +156,68 @@ test("an audit failure rolls back the review decision, execution, and request", 
     assert.equal(document.reviewStatus, "pending");
     assert.equal(execution.status, "waiting_for_review");
     assert.equal(String(request.currentExecution), String(data.executions[0]._id));
+});
+
+test("a reasoned human override is idempotent and advances atomically without mutating automatic evidence", async () => {
+    const data = await fixture("override-approve");
+    const result = await createAutomaticResult(data);
+    const first = await coordinator.overrideVerificationResult(result._id, data.verifier._id, {
+        decision: "approved", reason: "Document and selfie evidence were manually confirmed.", idempotencyKey: "override-1"
+    });
+    const second = await coordinator.overrideVerificationResult(result._id, data.verifier._id, {
+        decision: "approved", reason: "Document and selfie evidence were manually confirmed.", idempotencyKey: "override-1"
+    });
+    assert.equal(String(first._id), String(second._id));
+    assert.equal((await VerificationResult.findById(result._id).lean()).automaticDecision, "manual_review");
+    assert.equal((await VerificationDecision.countDocuments({ result: result._id })), 1);
+    assert.equal((await VerificationStepExecution.findById(data.executions[0]._id).lean()).status, "completed");
+    assert.equal(String((await VerificationRequest.findById(data.request._id).lean()).currentExecution), String(data.executions[1]._id));
+    assert.equal(await AuditLog.countDocuments({ action: "decision_overridden", target: result._id }), 1);
+});
+
+test("role-specific request views expose a safe applicant summary and detailed verifier evidence", async () => {
+    const data = await fixture("result-views");
+    const result = await createAutomaticResult(data);
+    await coordinator.overrideVerificationResult(result._id, data.verifier._id, {
+        decision: "approved", reason: "The submitted evidence was confirmed during manual review.", idempotencyKey: "view-override-1"
+    });
+
+    const applicantView = await verificationRequestService.getVerificationRequestById(data.request._id, data.applicant._id);
+    assert.deepEqual(applicantView.verificationSummary.reasonCodes, ["FACE_SIMILARITY_UNCERTAIN"]);
+    assert.equal(applicantView.verificationSummary.automaticDecision, "manual_review");
+    assert.equal(applicantView.verificationSummary.finalDecision, "approved");
+    assert.equal(applicantView.verificationSummary.result, undefined);
+
+    const verifierView = await verifierService.getVerificationRequest(data.request._id, data.verifier._id);
+    assert.equal(verifierView.results.length, 1);
+    assert.equal(verifierView.decisions.length, 1);
+    assert.equal(verifierView.results[0].result.document.fields.panNumber.valueMasked, "ABCDE****F");
+});
+
+test("an opposite second override conflicts", async () => {
+    const data = await fixture("override-conflict");
+    const result = await createAutomaticResult(data);
+    await coordinator.overrideVerificationResult(result._id, data.verifier._id, {
+        decision: "approved", reason: "Manual inspection confirms the applicant.", idempotencyKey: "override-1"
+    });
+    await assert.rejects(coordinator.overrideVerificationResult(result._id, data.verifier._id, {
+        decision: "rejected", reason: "A different operator conclusion was attempted.", idempotencyKey: "override-2"
+    }), (error) => error.code === "DECISION_OVERRIDE_CONFLICT");
+});
+
+test("override audit failure rolls back the decision and workflow", async () => {
+    const data = await fixture("override-rollback");
+    const result = await createAutomaticResult(data);
+    const originalCreate = AuditLog.create;
+    AuditLog.create = async () => { throw new Error("injected override audit failure"); };
+    try {
+        await assert.rejects(coordinator.overrideVerificationResult(result._id, data.verifier._id, {
+            decision: "approved", reason: "Manual inspection confirms the applicant.", idempotencyKey: "override-1"
+        }));
+    } finally {
+        AuditLog.create = originalCreate;
+    }
+    assert.equal(await VerificationDecision.countDocuments({ result: result._id }), 0);
+    assert.equal((await VerificationStepExecution.findById(data.executions[0]._id).lean()).status, "waiting_for_review");
+    assert.equal(String((await VerificationRequest.findById(data.request._id).lean()).currentExecution), String(data.executions[0]._id));
 });

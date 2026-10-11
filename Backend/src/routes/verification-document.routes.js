@@ -4,6 +4,7 @@ const verificationDocController = require("../controllers/verification-document.
 const authMiddleware = require("../middlewares/auth.middleware")
 const roleMiddleware = require("../middlewares/role.middleware")
 const upload = require("../middlewares/upload.middleware");
+const { requireIdempotencyKey } = require("../middlewares/idempotency.middleware");
 
 /**
  * @route POST api/verification-requests/:requestId/documents/upload
@@ -14,6 +15,7 @@ verificationDocRouter.post(
     "/:requestId/documents",
     authMiddleware.authUser,
     roleMiddleware.authRoles("user"),
+    requireIdempotencyKey,
     upload.single("document"),
     verificationDocController.uploadController
 );

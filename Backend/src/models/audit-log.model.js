@@ -21,6 +21,8 @@ const auditLogSchema = new mongoose.Schema({
             "request_transition",
             "execution_transition",
             "review_decision",
+            "verification_result_created",
+            "decision_overridden",
             "request_archived",
             "step_added",
             "step_updated",
@@ -44,7 +46,7 @@ const auditLogSchema = new mongoose.Schema({
     },
     targetModel: {
         type: String,
-        enum: ["WorkflowTemplate", "WorkflowStep", "VerificationRequest", "VerificationStepExecution", "VerificationDocument", "Organization", "User"]
+        enum: ["WorkflowTemplate", "WorkflowStep", "VerificationRequest", "VerificationStepExecution", "VerificationDocument", "VerificationResult", "Organization", "User"]
     },
     transition: {
         fromState: String,

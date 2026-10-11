@@ -4,6 +4,9 @@ const VerificationRequest = require("../models/verification-request.model");
 const VerificationStepExecution = require("../models/verification-step-execution.model");
 const VerificationDocument = require("../models/verification-document.model");
 const AuditLog = require("../models/audit-log.model");
+const { persistInSession: persistVerificationResultInSession } = require("./verification/verification-result.service");
+const VerificationResult = require("../models/verification-result.model");
+const VerificationDecision = require("../models/verification-decision.model");
 const { requireRequestAccess, requireDocumentReviewer, AccessError, idEquals } = require("./authorization.service");
 const {
     REQUEST_STATES,
@@ -204,6 +207,30 @@ async function finalizeExecution({ requestId, executionId, processingToken, outc
             if (execution.processingToken !== processingToken) {
                 throw new WorkflowCommandConflictError("Execution claim is no longer valid.", "INVALID_PROCESSING_CLAIM");
             }
+            let verificationResult = null;
+            if (outcome.verificationResult) {
+                verificationResult = await persistVerificationResultInSession({
+                    organization: request.organization,
+                    result: outcome.verificationResult,
+                    digestKey: process.env.VERIFICATION_RESULT_DIGEST_KEY,
+                    session
+                });
+                await AuditLog.create([{
+                    organization: request.organization,
+                    action: "verification_result_created",
+                    actor: actorId || undefined,
+                    actorType: actorId ? "user" : "system",
+                    target: verificationResult._id,
+                    targetModel: "VerificationResult",
+                    details: {
+                        schemaVersion: verificationResult.schemaVersion,
+                        pipelineVersion: verificationResult.pipelineVersion,
+                        attempt: verificationResult.attempt,
+                        automaticDecision: verificationResult.automaticDecision,
+                        reasonCodes: verificationResult.reasonCodes
+                    }
+                }], { session });
+            }
             const settlesSameStateClaim = execution.status === targetStatus;
             if (!settlesSameStateClaim) assertExecutionTransition(execution.status, targetStatus);
             const now = new Date();
@@ -278,7 +305,7 @@ async function finalizeExecution({ requestId, executionId, processingToken, outc
                 }
                 if (!updatedRequest) throw new WorkflowCommandConflictError("Request advanced concurrently.");
             }
-            result = { idempotent: false, request: updatedRequest, execution: updatedExecution };
+            result = { idempotent: false, request: updatedRequest, execution: updatedExecution, verificationResult };
         });
     } finally {
         await session.endSession();
@@ -706,6 +733,137 @@ async function reviewDocument(documentId, actorId, decision, rejectionReason = n
     return result;
 }
 
+async function overrideVerificationResult(resultId, actorId, command) {
+    if (!["approved", "rejected"].includes(command?.decision)) {
+        throw new WorkflowCommandConflictError("Override decision is invalid.", "INVALID_OVERRIDE_DECISION");
+    }
+    const reason = command.reason?.trim();
+    if (!reason || reason.length < 10 || reason.length > 500) {
+        throw new WorkflowCommandConflictError("Override reason must contain 10 to 500 characters.", "OVERRIDE_REASON_REQUIRED");
+    }
+    const idempotencyKey = command.idempotencyKey?.trim();
+    if (!idempotencyKey || idempotencyKey.length > 128) {
+        throw new WorkflowCommandConflictError("Override requires a valid idempotency key.", "IDEMPOTENCY_KEY_REQUIRED");
+    }
+    const initialResult = await VerificationResult.findById(resultId).lean();
+    if (!initialResult) throw new AccessError("Verification result not found.", 404);
+    await requireCommandAccess(actorId, initialResult.verificationRequest, ["verifier"]);
+    const session = await mongoose.startSession();
+    let decisionRecord;
+    try {
+        await session.withTransaction(async () => {
+            const result = await VerificationResult.findById(resultId).session(session);
+            if (!result) throw new AccessError("Verification result not found.", 404);
+            const existing = await VerificationDecision.findOne({ result: result._id }).session(session);
+            if (existing) {
+                if (existing.decision !== command.decision) {
+                    throw new WorkflowCommandConflictError("The result already has a different final decision.", "DECISION_OVERRIDE_CONFLICT");
+                }
+                decisionRecord = existing;
+                return;
+            }
+            const request = await VerificationRequest.findById(result.verificationRequest).session(session);
+            const execution = await VerificationStepExecution.findById(result.execution).session(session);
+            if (!request || !execution || request.status !== REQUEST_STATES.IN_PROGRESS ||
+                !idEquals(request.currentExecution, execution._id) || execution.status !== EXECUTION_STATES.WAITING_FOR_REVIEW ||
+                !idEquals(execution.currentResult, result._id)) {
+                throw new WorkflowCommandConflictError("The verification result is not awaiting a final decision.");
+            }
+            const [created] = await VerificationDecision.create([{
+                organization: result.organization,
+                result: result._id,
+                verificationRequest: request._id,
+                execution: execution._id,
+                previousDecision: result.automaticDecision,
+                decision: command.decision,
+                reason,
+                reasonCode: command.reasonCode || null,
+                actor: actorId,
+                idempotencyKey
+            }], { session });
+            await AuditLog.create([{
+                organization: result.organization,
+                action: "decision_overridden",
+                actor: actorId,
+                actorType: "user",
+                target: result._id,
+                targetModel: "VerificationResult",
+                details: {
+                    previousDecision: result.automaticDecision,
+                    finalDecision: command.decision,
+                    reason,
+                    reasonCode: command.reasonCode || null,
+                    resultSchemaVersion: result.schemaVersion
+                }
+            }], { session });
+            const now = new Date();
+            const executionStatus = command.decision === "approved" ? EXECUTION_STATES.COMPLETED : EXECUTION_STATES.FAILED;
+            assertExecutionTransition(execution.status, executionStatus);
+            const executionSet = { status: executionStatus, processingToken: null, leaseExpiresAt: null,
+                metadata: { ...(execution.metadata || {}), finalDecision: command.decision, decisionRecord: created._id } };
+            if (command.decision === "approved") executionSet.completedAt = now;
+            else executionSet.lastError = { code: "HUMAN_REJECTED", message: "Verification was rejected after human review.", retryable: false };
+            const changed = await VerificationStepExecution.updateOne(
+                { _id: execution._id, status: EXECUTION_STATES.WAITING_FOR_REVIEW, stateVersion: execution.stateVersion },
+                { $set: executionSet, $inc: { stateVersion: 1 } }, { session }
+            );
+            if (changed.modifiedCount !== 1) throw new WorkflowCommandConflictError("Decision was applied concurrently.");
+            await writeTransition(session, { organization: request.organization, action: "execution_transition",
+                actor: actorId, target: execution._id, targetModel: "VerificationStepExecution",
+                fromState: EXECUTION_STATES.WAITING_FOR_REVIEW, toState: executionStatus,
+                command: command.decision === "approved" ? "approve" : "reject", reason });
+            if (command.decision === "approved") {
+                const next = await VerificationStepExecution.findOne({ verificationRequest: request._id,
+                    stepOrder: { $gt: execution.stepOrder }, status: EXECUTION_STATES.PENDING }).sort({ stepOrder: 1 }).session(session);
+                if (next) {
+                    const advanced = await VerificationRequest.updateOne(
+                        { _id: request._id, status: REQUEST_STATES.IN_PROGRESS, currentExecution: execution._id, stateVersion: request.stateVersion },
+                        { $set: { currentExecution: next._id, currentStep: next.workflowStep, lastTransitionAt: now }, $inc: { stateVersion: 1 } },
+                        { session }
+                    );
+                    if (advanced.modifiedCount !== 1) throw new WorkflowCommandConflictError("Request advanced concurrently.");
+                } else {
+                    assertRequestTransition(request.status, REQUEST_STATES.COMPLETED);
+                    const completed = await VerificationRequest.updateOne(
+                        { _id: request._id, status: REQUEST_STATES.IN_PROGRESS, currentExecution: execution._id, stateVersion: request.stateVersion },
+                        { $set: { status: REQUEST_STATES.COMPLETED, currentExecution: null, currentStep: null,
+                            completedAt: now, lastTransitionAt: now }, $inc: { stateVersion: 1 } }, { session }
+                    );
+                    if (completed.modifiedCount !== 1) throw new WorkflowCommandConflictError("Request completed concurrently.");
+                    await writeTransition(session, { organization: request.organization, action: "request_transition",
+                        actor: actorId, target: request._id, targetModel: "VerificationRequest",
+                        fromState: REQUEST_STATES.IN_PROGRESS, toState: REQUEST_STATES.COMPLETED, command: "complete" });
+                }
+            } else {
+                assertRequestTransition(request.status, REQUEST_STATES.REJECTED);
+                const future = await VerificationStepExecution.find({ verificationRequest: request._id, _id: { $ne: execution._id },
+                    status: { $in: [EXECUTION_STATES.PENDING, EXECUTION_STATES.WAITING_FOR_INPUT, EXECUTION_STATES.PROCESSING,
+                        EXECUTION_STATES.WAITING_FOR_REVIEW, EXECUTION_STATES.FAILED] } }).session(session);
+                for (const item of future) {
+                    assertExecutionTransition(item.status, EXECUTION_STATES.CANCELLED);
+                    await VerificationStepExecution.updateOne({ _id: item._id, status: item.status, stateVersion: item.stateVersion },
+                        { $set: { status: EXECUTION_STATES.CANCELLED, cancelledAt: now, cancelledBy: actorId,
+                            cancellationReason: "Request rejected after human review" }, $inc: { stateVersion: 1 } }, { session });
+                }
+                const rejected = await VerificationRequest.updateOne(
+                    { _id: request._id, status: REQUEST_STATES.IN_PROGRESS, currentExecution: execution._id, stateVersion: request.stateVersion },
+                    { $set: { status: REQUEST_STATES.REJECTED, currentExecution: null, currentStep: null,
+                        rejectedAt: now, rejectedBy: actorId, rejectionReason: reason, lastTransitionAt: now },
+                    $inc: { stateVersion: 1 } }, { session }
+                );
+                if (rejected.modifiedCount !== 1) throw new WorkflowCommandConflictError("Request rejected concurrently.");
+                await writeTransition(session, { organization: request.organization, action: "request_transition",
+                    actor: actorId, target: request._id, targetModel: "VerificationRequest",
+                    fromState: REQUEST_STATES.IN_PROGRESS, toState: REQUEST_STATES.REJECTED, command: "reject", reason });
+            }
+            decisionRecord = created;
+        });
+        return decisionRecord;
+    } finally {
+        await session.endSession();
+    }
+}
+
 async function moveToNextStep() {
     throw new WorkflowCommandConflictError("Direct workflow advancement is disabled; finalize the current execution instead.");
 }
@@ -723,6 +881,7 @@ module.exports = {
     retryExecution,
     cancelVerification,
     reviewDocument,
+    overrideVerificationResult,
     moveToNextStep,
     completeVerification
 };

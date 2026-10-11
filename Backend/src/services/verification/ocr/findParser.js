@@ -1,22 +1,17 @@
-const {aadhaarParser} = require("../ocr/parsers/aadhaar.parser")
+const { extractDocumentEvidence } = require("../../../domain/document-evidence");
 const {drivingLicenseParser} = require("../ocr/parsers/drivingLicense.parser");
-const { panCardParser } = require("./parsers/panCard.parser");
 
-async function findParser(docType, rawText) {
-    let result;
-    if(docType == "Aadhaar"){
-        result = await aadhaarParser(rawText);
+async function findParser(docType, input) {
+    if (docType === "PAN" || docType === "Aadhaar") {
+        const evidence = extractDocumentEvidence(docType === "Aadhaar" ? "AADHAAR" : "PAN", input);
+        const values = Object.fromEntries(Object.entries(evidence.fields).map(([key, item]) => [key, item.value]));
+        return { ...values, evidence };
     }
-
-    if(docType == "Driving License"){
-        result = await drivingLicenseParser(rawText);
+    if (docType === "Driving License") {
+        const text = typeof input === "string" ? input : input?.text || "";
+        return drivingLicenseParser(text);
     }
-
-    if(docType == "PAN"){
-        result = await panCardParser(rawText);
-    }
-
-    return result;
+    return undefined;
 }
 
 module.exports = {findParser};

@@ -51,6 +51,7 @@ const validExecutionTransitions = new Set([
     "processing->failed",
     "processing->cancelled",
     "waiting_for_review->completed",
+    "waiting_for_review->waiting_for_input",
     "waiting_for_review->failed",
     "waiting_for_review->cancelled",
     "failed->pending",

@@ -4,6 +4,7 @@ const authMiddleware = require("../middlewares/auth.middleware");
 const roleMiddleware = require("../middlewares/role.middleware");
 const verifierController = require("../controllers/verifier.controller");
 const { validateBody, schemas } = require("../middlewares/validation.middleware");
+const { requireIdempotencyKey } = require("../middlewares/idempotency.middleware");
 
 /**
  * @route POST /verifier/documents/:id/approve
@@ -18,6 +19,15 @@ verifierRouter.post("/documents/:id/approve", authMiddleware.authUser, roleMiddl
  * @access Private
  */
 verifierRouter.post("/documents/:id/reject", authMiddleware.authUser, roleMiddleware.authRoles("verifier"), validateBody(schemas.documentReject), verifierController.rejectController)
+
+verifierRouter.post(
+    "/results/:resultId/decision",
+    authMiddleware.authUser,
+    roleMiddleware.authRoles("verifier"),
+    requireIdempotencyKey,
+    validateBody(schemas.verificationOverride),
+    verifierController.overrideResultController
+);
 
 /**
  * @route GET /verifier/pending

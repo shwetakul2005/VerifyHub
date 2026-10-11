@@ -43,6 +43,7 @@ verificationRequestRouter.post(
     roleMiddleware.authRoles("user"),
     upload.fields([
         { name: "document", maxCount: 1 },
+        { name: "selfie", maxCount: 1 },
         { name: "live", maxCount: 1 }
     ]),
     verificationRequestController.submitFaceVerificationController

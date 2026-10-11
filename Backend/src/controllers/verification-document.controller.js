@@ -1,6 +1,8 @@
 const VerificationRequestModel = require("../models/verification-request.model");
 const verificationDocumentService = require("../services/verification-document.service");
 const workflowEngineService = require("../services/workflow-engine.service");
+const crypto = require("node:crypto");
+const { readFile } = require("node:fs/promises");
 
 async function uploadController(req, res) {
     const verificationRequestId = req.params.requestId;
@@ -33,6 +35,7 @@ async function uploadController(req, res) {
         size: fileSize
     } = req.file;
 
+    const contentDigest = crypto.createHash("sha256").update(await readFile(filePath)).digest("hex");
     const data = {
         verificationRequest: verificationRequestId,
         title,
@@ -40,7 +43,8 @@ async function uploadController(req, res) {
         fileName,
         filePath,
         mimeType,
-        fileSize
+        fileSize,
+        contentDigest
     };
     const verificationReq = await VerificationRequestModel.findById(verificationRequestId).populate("currentStep")
     if (!verificationReq) {
@@ -65,7 +69,8 @@ async function uploadController(req, res) {
     try {
         const document = await verificationDocumentService.uploadVerificationDocument(
             data,
-            req.user.id
+            req.user.id,
+            { idempotencyKey: req.idempotencyKey }
         );
         await workflowEngineService.executeCurrentStep(
             verificationRequestId,
@@ -81,6 +86,7 @@ async function uploadController(req, res) {
     } catch (err) {
         return res.status(400).json({
             success: false,
+            code: err.code || "EVIDENCE_SUBMISSION_FAILED",
             message: err.message
         });
     }

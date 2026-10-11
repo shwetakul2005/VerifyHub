@@ -31,7 +31,8 @@ export const uploadVerificationDocument = async (
     requestId,
     file,
     title,
-    documentType
+    documentType,
+    idempotencyKey = crypto.randomUUID()
 ) => {
     const formData = new FormData();
 
@@ -41,7 +42,13 @@ export const uploadVerificationDocument = async (
 
     const response = await api.post(
         `/verification-requests/${requestId}/documents`,
-        formData
+        formData,
+        {
+            headers: {
+                "Content-Type": "multipart/form-data",
+                "Idempotency-Key": idempotencyKey
+            }
+        }
     );
 
     return response.data;
@@ -62,10 +69,10 @@ export const getDocuments = async (requestId) => {
     return response.data.documents;
 };
 
-export const submitFaceVerification = async (requestId, documentFile, liveFile) => {
+export const submitFaceVerification = async (requestId, documentFile, selfieFile) => {
     const formData = new FormData();
     formData.append("document", documentFile);
-    formData.append("live", liveFile);
+    formData.append("selfie", selfieFile);
 
     const response = await api.post(
         `/verification-requests/${requestId}/face-verification`,

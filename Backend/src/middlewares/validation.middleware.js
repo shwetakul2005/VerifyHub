@@ -97,6 +97,12 @@ const schemas = {
 
     documentReject: z.object({
         rejectionReason: z.string().trim().min(3).max(1000)
+    }).strict(),
+
+    verificationOverride: z.object({
+        decision: z.enum(["approved", "rejected"]),
+        reason: z.string().trim().min(10).max(500),
+        reasonCode: z.string().trim().min(1).max(80).optional()
     }).strict()
 };
 

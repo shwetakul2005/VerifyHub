@@ -5,4 +5,6 @@ numpy
 opencv-python-headless
 insightface
 onnxruntime
+pytest
+httpx
 -r RAG/requirements.txt
