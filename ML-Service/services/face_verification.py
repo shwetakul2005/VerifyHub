@@ -67,12 +67,6 @@ class FaceVerificationService:
                 "threshold": self.selfie_quality_threshold,
                 "reason": "Selfie image is usable." if passed else "Selfie image quality is insufficient."}
 
-    def estimate_liveness(self, image):
-        """Deprecated response shape for existing callers; value is image quality only."""
-        quality = self.analyze_selfie_quality(image)
-        return {"liveness": quality["passed"], "score": quality["score"],
-                "threshold": quality["threshold"], "reason": quality["reason"]}
-
     @staticmethod
     def _face_summary(face, image):
         x1, y1, x2, y2 = np.asarray(face.bbox, dtype=np.float64)
@@ -98,20 +92,4 @@ class FaceVerificationService:
             "selfieFace": self._face_summary(selfie_face, selfie_image),
             "selfieQuality": {"score": quality["score"], "threshold": quality["threshold"], "passed": quality["passed"]},
             "faceComparison": comparison
-        }
-
-    def verify_identity(self, document_image, live_image):
-        """Compatibility facade for the existing backend endpoint."""
-        result = self.compare_faces(document_image, live_image)
-        comparison = result["faceComparison"]
-        quality = result["selfieQuality"]
-        passed = bool(comparison["matched"] and quality["passed"])
-        return {
-            "verified": passed, "match": comparison,
-            "liveness": {"liveness": quality["passed"], "score": quality["score"],
-                         "threshold": quality["threshold"], "reason": "Legacy selfie image quality check."},
-            "thresholds": {"faceMatch": self.match_threshold, "liveness": self.selfie_quality_threshold},
-            "decision": "approved" if passed else "rejected",
-            "message": ("Document face matches selfie and image quality is usable." if passed
-                        else "Identity verification could not be completed. Please retry with a clearer selfie.")
         }

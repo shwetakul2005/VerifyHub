@@ -1,4 +1,3 @@
-const fs = require("fs");
 const VerificationRequest = require("../../../models/verification-request.model");
 const VerificationStepExecution = require("../../../models/verification-step-execution.model");
 const VerificationDocument = require("../../../models/verification-document.model");
@@ -24,27 +23,6 @@ function getUploadedFiles(files) {
     if (!documentFile) throw new Error("Document image is required for identity verification.");
     if (!selfieFile) throw new Error("Selfie is required for identity verification.");
     return { documentFile, selfieFile };
-}
-
-async function callMlService(documentFile, selfieFile) {
-    const mlBaseUrl = process.env.ML_SERVICE_URL || "http://localhost:8000";
-    const formData = new FormData();
-    formData.append("document", new Blob([fs.readFileSync(documentFile.path)], {
-        type: documentFile.mimetype || "application/octet-stream"
-    }), documentFile.originalname || "document.jpg");
-    formData.append("live", new Blob([fs.readFileSync(selfieFile.path)], {
-        type: selfieFile.mimetype || "application/octet-stream"
-    }), selfieFile.originalname || "selfie.jpg");
-    const response = await fetch(`${mlBaseUrl}/face-verification/verify`, { method: "POST", body: formData });
-    const rawText = await response.text();
-    let payload;
-    try {
-        payload = rawText ? JSON.parse(rawText) : {};
-    } catch {
-        throw new Error("Face verification service returned an invalid response.");
-    }
-    if (!response.ok) throw new Error(payload?.detail || payload?.message || "Face verification service failed.");
-    return payload;
 }
 
 async function submitFaceVerificationStep(requestId, applicantId, files) {
@@ -140,6 +118,5 @@ async function execute(context, dependencies = {}) {
 module.exports = {
     submitFaceVerificationStep,
     execute,
-    getRequestForFaceVerification,
-    callMlService
+    getRequestForFaceVerification
 };

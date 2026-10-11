@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from routers.face_verification import _read_limited
+from routers.upload_utils import read_limited
 
 router = APIRouter(prefix="/v1/face", tags=["Face Evidence"])
 logger = logging.getLogger(__name__)
@@ -59,8 +59,8 @@ async def compare_faces(request: Request, document: UploadFile = File(...), self
     if service is None:
         return JSONResponse(status_code=503, content={"code": "MODEL_NOT_READY", "message": "Face analysis is not ready."})
     try:
-        document_image = service._read_image(await _read_limited(document))
-        selfie_image = service._read_image(await _read_limited(selfie))
+        document_image = service._read_image(await read_limited(document))
+        selfie_image = service._read_image(await read_limited(selfie))
         return FaceEvidenceResponse.model_validate(service.compare_faces(document_image, selfie_image))
     except ValidationError:
         correlation_id = uuid4().hex
