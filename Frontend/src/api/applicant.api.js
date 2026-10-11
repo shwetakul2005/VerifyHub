@@ -31,7 +31,8 @@ export const uploadVerificationDocument = async (
     requestId,
     file,
     title,
-    documentType
+    documentType,
+    idempotencyKey = crypto.randomUUID()
 ) => {
     const formData = new FormData();
 
@@ -41,7 +42,13 @@ export const uploadVerificationDocument = async (
 
     const response = await api.post(
         `/verification-requests/${requestId}/documents`,
-        formData
+        formData,
+        {
+            headers: {
+                "Content-Type": "multipart/form-data",
+                "Idempotency-Key": idempotencyKey
+            }
+        }
     );
 
     return response.data;

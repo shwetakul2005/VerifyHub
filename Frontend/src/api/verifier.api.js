@@ -7,7 +7,21 @@ export const getPendingDocuments = async () => {
 
 export const getVerificationRequest = async (id) => {
     const response = await api.get(`/verifier/request/${id}`);
-    console.log(`be url:   /verifier/request/${id}`)
+    return response.data;
+};
+
+export const overrideVerificationResult = async (
+    resultId,
+    decision,
+    reason,
+    reasonCode = null,
+    idempotencyKey = crypto.randomUUID()
+) => {
+    const response = await api.post(
+        `/verifier/results/${resultId}/decision`,
+        { decision, reason, ...(reasonCode ? { reasonCode } : {}) },
+        { headers: { "Idempotency-Key": idempotencyKey } }
+    );
     return response.data;
 };
 

@@ -14,6 +14,7 @@ const verifierService = require("../../src/services/verifier.service");
 const VerificationResult = require("../../src/models/verification-result.model");
 const VerificationDecision = require("../../src/models/verification-decision.model");
 const coordinator = require("../../src/services/workflow-engine.service");
+const verificationRequestService = require("../../src/services/verification-request.service");
 
 test.before(startDatabase);
 test.afterEach(clearDatabase);
@@ -87,7 +88,7 @@ async function fixture(label) {
         fileSize: 10,
         reviewStatus: "pending"
     });
-    return { verifier, request, executions, document };
+    return { applicant, verifier, request, executions, document };
 }
 
 async function createAutomaticResult(data, automaticDecision = "manual_review") {
@@ -172,6 +173,25 @@ test("a reasoned human override is idempotent and advances atomically without mu
     assert.equal((await VerificationStepExecution.findById(data.executions[0]._id).lean()).status, "completed");
     assert.equal(String((await VerificationRequest.findById(data.request._id).lean()).currentExecution), String(data.executions[1]._id));
     assert.equal(await AuditLog.countDocuments({ action: "decision_overridden", target: result._id }), 1);
+});
+
+test("role-specific request views expose a safe applicant summary and detailed verifier evidence", async () => {
+    const data = await fixture("result-views");
+    const result = await createAutomaticResult(data);
+    await coordinator.overrideVerificationResult(result._id, data.verifier._id, {
+        decision: "approved", reason: "The submitted evidence was confirmed during manual review.", idempotencyKey: "view-override-1"
+    });
+
+    const applicantView = await verificationRequestService.getVerificationRequestById(data.request._id, data.applicant._id);
+    assert.deepEqual(applicantView.verificationSummary.reasonCodes, ["FACE_SIMILARITY_UNCERTAIN"]);
+    assert.equal(applicantView.verificationSummary.automaticDecision, "manual_review");
+    assert.equal(applicantView.verificationSummary.finalDecision, "approved");
+    assert.equal(applicantView.verificationSummary.result, undefined);
+
+    const verifierView = await verifierService.getVerificationRequest(data.request._id, data.verifier._id);
+    assert.equal(verifierView.results.length, 1);
+    assert.equal(verifierView.decisions.length, 1);
+    assert.equal(verifierView.results[0].result.document.fields.panNumber.valueMasked, "ABCDE****F");
 });
 
 test("an opposite second override conflicts", async () => {

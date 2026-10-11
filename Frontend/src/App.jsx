@@ -66,7 +66,7 @@ function App() {
                 <Route
                     path="/verifier/request/:id"
                     element={
-                        <ProtectedRoute allowedRoles={"verifier"}>
+                        <ProtectedRoute allowedRoles={["verifier"]}>
                             <VerificationRequest />
                         </ProtectedRoute>
                     }

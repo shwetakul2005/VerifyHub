@@ -2,6 +2,8 @@ const VerificationDocument = require("../models/verification-document.model");
 const VerificationRequest = require("../models/verification-request.model");
 const VerificationStepExecution = require("../models/verification-step-execution.model");
 const workflowEngineService = require("./workflow-engine.service");
+const VerificationResult = require("../models/verification-result.model");
+const VerificationDecision = require("../models/verification-decision.model");
 const {
     findMembership,
     idEquals,
@@ -74,11 +76,15 @@ async function getVerificationRequest(requestId, verifierId) {
     const executions = await VerificationStepExecution.find({
         verificationRequest: requestId
     }).populate("workflowStep");
+    const results = await VerificationResult.find({ verificationRequest: requestId }).sort({ createdAt: -1 }).lean();
+    const decisions = await VerificationDecision.find({ result: { $in: results.map((result) => result._id) } }).lean();
 
     return {
         request,
         documents,
-        executions
+        executions,
+        results,
+        decisions
     };
 }
 

@@ -6,6 +6,8 @@ const VerificationStepExecutionModel = require("../models/verification-step-exec
 const AuditLogModel = require("../models/audit-log.model");
 const mongoose = require("mongoose");
 const faceVerificationService = require("./verification/faceVerification/face-verification.service");
+const VerificationResult = require("../models/verification-result.model");
+const VerificationDecision = require("../models/verification-decision.model");
 const { WorkflowDefinitionError } = require("../domain/workflow-definition");
 const {
     AccessError,
@@ -171,7 +173,19 @@ async function getVerificationRequestById(requestId, actorId) {
         throw new Error("Verification request not found.");
     }
 
-    return verificationRequest;
+    const latestResult = await VerificationResult.findOne({ verificationRequest: requestId }).sort({ createdAt: -1 }).lean();
+    const finalDecision = latestResult
+        ? await VerificationDecision.findOne({ result: latestResult._id }).lean()
+        : null;
+    return {
+        ...verificationRequest.toObject(),
+        verificationSummary: latestResult ? {
+            automaticDecision: latestResult.automaticDecision,
+            finalDecision: finalDecision?.decision || latestResult.finalDecision,
+            reasonCodes: latestResult.reasonCodes,
+            createdAt: latestResult.createdAt
+        } : null
+    };
 }
 
 async function getVerificationRequestByUserId(userId) {

@@ -79,7 +79,12 @@ async function submitFaceVerificationStep(requestId, applicantId, files) {
         success: ["completed", "waiting_for_review"].includes(result.outcome?.status),
         completed: result.outcome?.status === "completed",
         message: result.outcome?.message || "Face verification is already being processed.",
-        result: result.outcome?.result,
+        result: result.outcome?.verificationResult ? {
+            automaticDecision: result.outcome.verificationResult.automaticDecision,
+            reasonCodes: result.outcome.verificationResult.reasonCodes,
+            documentQuality: result.outcome.verificationResult.document.quality.score,
+            selfieQuality: result.outcome.verificationResult.selfie.quality.score
+        } : result.outcome?.result,
         execution: result.execution,
         verificationRequest: result.request
     };
