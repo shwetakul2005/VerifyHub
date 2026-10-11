@@ -128,6 +128,26 @@ function VerificationRequest() {
                             </table>
                         </section>
                     )}
+
+                    {result && (
+                        <section className="verification-card">
+                            <h2>Quality checks</h2>
+                            <table className="field-table">
+                                <thead><tr><th>Evidence</th><th>Check</th><th>Score</th><th>Result</th></tr></thead>
+                                <tbody>
+                                    {[
+                                        ...(result.document?.quality?.checks || []).map((check) => ({ ...check, source: "Document" })),
+                                        ...(result.selfie?.quality?.checks || []).map((check) => ({ ...check, source: "Selfie" }))
+                                    ].map((check) => (
+                                        <tr key={`${check.source}-${check.code}`}>
+                                            <td>{check.source}</td><td>{check.code.replaceAll("_", " ")}</td>
+                                            <td>{Math.round(check.score * 100)}%</td><td>{check.passed ? "Passed" : "Review"}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </section>
+                    )}
                 </div>
 
                 <aside className="verification-stack">
@@ -165,6 +185,25 @@ function VerificationRequest() {
                             <h2>{existingDecision.decision === "approved" ? "Approved" : "Rejected"}</h2>
                             <p>{existingDecision.reason}</p>
                             <p className="field-help">Recorded {new Date(existingDecision.createdAt).toLocaleString()}</p>
+                        </section>
+                    )}
+
+                    {results.length > 0 && (
+                        <section className="verification-card">
+                            <h2>Attempt history</h2>
+                            <div className="step-list">
+                                {results.map((item) => {
+                                    const humanDecision = decisions.find((entry) => String(entry.result) === String(item._id));
+                                    return (
+                                        <div className="step-item" key={item._id}>
+                                            <div><strong>Attempt {item.attempt}</strong><div className="muted">{new Date(item.createdAt).toLocaleString()}</div></div>
+                                            <span className={`status-chip status-${humanDecision?.decision || item.finalDecision}`}>
+                                                {(humanDecision?.decision || item.finalDecision).replaceAll("_", " ")}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </section>
                     )}
 

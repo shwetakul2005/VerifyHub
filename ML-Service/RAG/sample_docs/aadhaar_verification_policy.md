@@ -10,10 +10,10 @@ Aadhaar verification accepts the following document types:
 1. **Document Upload**: User uploads a clear image or PDF of the Aadhaar card.
 2. **OCR Extraction**: The system extracts name, Aadhaar number (masked in storage), date of birth, and address using OCR.
 3. **Format Validation**: The extracted Aadhaar number is checked against the Verhoeff checksum algorithm to confirm it is a structurally valid number.
-4. **Face Match (optional step)**: If liveness detection is enabled in the workflow, the photo on the Aadhaar card is matched against a live selfie capture.
+4. **Face Match (optional step)**: The photo on the Aadhaar card can be compared with a submitted selfie. Selfie quality checks are not liveness detection.
 
 ## SLA
-Aadhaar OCR-based verification typically completes within 30 seconds. If the face-match step is included, add up to 15 seconds for liveness processing.
+Aadhaar OCR and face processing time depends on the deployment and model runtime; no fixed service-level time is claimed by this sample policy.
 
 ## Data Retention
 Only the masked Aadhaar number (last 4 digits) is stored in the database. Full Aadhaar numbers are never persisted, in line with UIDAI data minimization guidelines.

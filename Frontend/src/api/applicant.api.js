@@ -69,10 +69,10 @@ export const getDocuments = async (requestId) => {
     return response.data.documents;
 };
 
-export const submitFaceVerification = async (requestId, documentFile, liveFile) => {
+export const submitFaceVerification = async (requestId, documentFile, selfieFile) => {
     const formData = new FormData();
     formData.append("document", documentFile);
-    formData.append("live", liveFile);
+    formData.append("selfie", selfieFile);
 
     const response = await api.post(
         `/verification-requests/${requestId}/face-verification`,

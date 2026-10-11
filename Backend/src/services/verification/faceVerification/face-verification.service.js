@@ -20,21 +20,21 @@ async function getRequestForFaceVerification(requestId, applicantId) {
 
 function getUploadedFiles(files) {
     const documentFile = files?.document?.[0] || files?.document || null;
-    const liveFile = files?.live?.[0] || files?.live || null;
+    const selfieFile = files?.selfie?.[0] || files?.selfie || files?.live?.[0] || files?.live || null;
     if (!documentFile) throw new Error("Document image is required for identity verification.");
-    if (!liveFile) throw new Error("Live selfie is required for identity verification.");
-    return { documentFile, liveFile };
+    if (!selfieFile) throw new Error("Selfie is required for identity verification.");
+    return { documentFile, selfieFile };
 }
 
-async function callMlService(documentFile, liveFile) {
+async function callMlService(documentFile, selfieFile) {
     const mlBaseUrl = process.env.ML_SERVICE_URL || "http://localhost:8000";
     const formData = new FormData();
     formData.append("document", new Blob([fs.readFileSync(documentFile.path)], {
         type: documentFile.mimetype || "application/octet-stream"
     }), documentFile.originalname || "document.jpg");
-    formData.append("live", new Blob([fs.readFileSync(liveFile.path)], {
-        type: liveFile.mimetype || "application/octet-stream"
-    }), liveFile.originalname || "live.jpg");
+    formData.append("live", new Blob([fs.readFileSync(selfieFile.path)], {
+        type: selfieFile.mimetype || "application/octet-stream"
+    }), selfieFile.originalname || "selfie.jpg");
     const response = await fetch(`${mlBaseUrl}/face-verification/verify`, { method: "POST", body: formData });
     const rawText = await response.text();
     let payload;
@@ -49,7 +49,7 @@ async function callMlService(documentFile, liveFile) {
 
 async function submitFaceVerificationStep(requestId, applicantId, files) {
     const { request, execution } = await getRequestForFaceVerification(requestId, applicantId);
-    const { documentFile, liveFile } = getUploadedFiles(files);
+    const { documentFile, selfieFile } = getUploadedFiles(files);
     const updated = await VerificationStepExecution.findOneAndUpdate(
         {
             _id: execution._id,
@@ -60,11 +60,11 @@ async function submitFaceVerificationStep(requestId, applicantId, files) {
             $set: {
                 "metadata.verificationType": "face_verification",
                 "metadata.documentFilePath": documentFile.path,
-                "metadata.liveFilePath": liveFile.path,
+                "metadata.selfieFilePath": selfieFile.path,
                 "metadata.documentFileName": documentFile.originalname,
-                "metadata.liveFileName": liveFile.originalname,
+                "metadata.selfieFileName": selfieFile.originalname,
                 "metadata.documentMimeType": documentFile.mimetype,
-                "metadata.liveMimeType": liveFile.mimetype
+                "metadata.selfieMimeType": selfieFile.mimetype
             }
         },
         { returnDocument: "after" }
@@ -92,13 +92,14 @@ async function submitFaceVerificationStep(requestId, applicantId, files) {
 
 async function execute(context, dependencies = {}) {
     const metadata = context.execution.metadata || {};
+    const selfiePath = metadata.selfieFilePath || metadata.liveFilePath;
     if (dependencies.callMlService) {
-        if (!metadata.documentFilePath || !metadata.liveFilePath) {
-            return { status: "waiting_for_input", message: "Waiting for the applicant to submit the document image and live selfie." };
+        if (!metadata.documentFilePath || !selfiePath) {
+            return { status: "waiting_for_input", message: "Waiting for the applicant to submit the document image and selfie." };
         }
         const mlResult = await dependencies.callMlService(
             { path: metadata.documentFilePath, mimetype: metadata.documentMimeType || "image/jpeg", originalname: metadata.documentFileName || "document.jpg" },
-            { path: metadata.liveFilePath, mimetype: metadata.liveMimeType || "image/jpeg", originalname: metadata.liveFileName || "live.jpg" }
+            { path: selfiePath, mimetype: metadata.selfieMimeType || metadata.liveMimeType || "image/jpeg", originalname: metadata.selfieFileName || metadata.liveFileName || "selfie.jpg" }
         );
         if (mlResult?.verified) return { status: "completed", metadata: { mlResult, verifiedAt: new Date() }, result: mlResult,
             message: mlResult.message || "Face verification completed successfully." };
@@ -106,7 +107,7 @@ async function execute(context, dependencies = {}) {
             error: { code: "FACE_MISMATCH", message: mlResult?.message || "Face comparison did not match.", retryable: false },
             result: mlResult, message: mlResult?.message || "Face verification failed." };
     }
-    if (!metadata.liveFilePath) {
+    if (!selfiePath) {
         return {
             status: "waiting_for_input",
             message: "Waiting for the applicant to submit a selfie."
@@ -130,8 +131,8 @@ async function execute(context, dependencies = {}) {
         documentId: document._id,
         declaredType,
         documentFile: { path: document.filePath, mimetype: document.mimeType, originalname: document.fileName },
-        selfieFile: { path: metadata.liveFilePath, mimetype: metadata.liveMimeType || "image/jpeg",
-            originalname: metadata.liveFileName || "selfie.jpg" },
+        selfieFile: { path: selfiePath, mimetype: metadata.selfieMimeType || metadata.liveMimeType || "image/jpeg",
+            originalname: metadata.selfieFileName || metadata.liveFileName || "selfie.jpg" },
         digestKey: process.env.VERIFICATION_RESULT_DIGEST_KEY
     });
 }

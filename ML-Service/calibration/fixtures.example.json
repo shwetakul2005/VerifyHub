@@ -1,0 +1,6 @@
+[
+  { "sample_id": "synthetic-same-01", "similarity": 0.91, "is_same_person": true },
+  { "sample_id": "synthetic-same-02", "similarity": 0.82, "is_same_person": true },
+  { "sample_id": "synthetic-different-01", "similarity": 0.41, "is_same_person": false },
+  { "sample_id": "synthetic-different-02", "similarity": 0.29, "is_same_person": false }
+]

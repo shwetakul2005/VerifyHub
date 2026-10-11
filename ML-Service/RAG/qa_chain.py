@@ -38,7 +38,7 @@ Rules:
 information on file — do not guess about compliance, thresholds, or \
 verification requirements.
 - Keep answers concise and cite which policy area (Aadhaar / PAN / \
-Liveness) the answer relates to.
+selfie image quality) the answer relates to.
 
 Context:
 {context}

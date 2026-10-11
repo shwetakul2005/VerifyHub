@@ -2,7 +2,7 @@
 
 VerifyHub is a full-stack identity-verification platform in active development. Its goal is to let an organization define a verification workflow once, reuse it for many applicants, and see each automated check and human decision in one traceable place.
 
-> **Project status:** This is a portfolio project, not a certified KYC product or a production-ready identity service. The security foundation and the first five workflow-reliability tasks are merged; the complete end-to-end journey and polished UI are still in progress. Use synthetic identity data only.
+> **Project status:** Phase 2 workflow reliability and the first complete Phase 3 PAN/Aadhaar verification pipeline are implemented in the current codebase. This is a portfolio/research project, not a certified KYC product or production identity service. Use synthetic identity data only.
 
 ## Why I am building it
 
@@ -17,12 +17,13 @@ The first showcase will deliberately use **strictly sequential** email, Aadhaar/
 ## What exists today
 
 - Express API with registration, login/logout, cookie-based JWT authentication, organization membership checks, tenant-scoped authorization, and workflow/request/document routes.
-- Applicant email and document flows, OCR parsing, verifier review endpoints, and a face-verification integration path. These paths exist but are not yet a fully reliable end-to-end workflow.
-- React/Vite frontend with authentication, basic applicant and verifier views. The organization-admin builder and the final UI design are not implemented yet.
-- FastAPI face-service prototype and an optional policy-question RAG extension. The quality-based “liveness” score is **not** a validated anti-spoof or certified liveness test.
-- Backend tests using Node's test runner and temporary MongoDB replica sets. Phase 2 currently includes central state-machine definitions, lifecycle schema fields, and a dry-run-capable migration tool. The new coordinator, retries, cancellation, immutable publication API, transactional review, archival, and complete audit wiring remain to be integrated.
+- A strict sequential workflow engine with centralized request/execution transitions, one execution per request/step, idempotent commands, bounded retries, cancellation, immutable published versions, archival, transactional review/advancement, and structured audit events.
+- A versioned document-and-face evidence pipeline with file-quality checks, OCR adapters, PAN/Aadhaar type and format validation, masked fields with confidence, face extraction/comparison, explainable three-way decisions, immutable results, and audited human override.
+- React/Vite applicant capture and verifier evidence views, including camera capture with file fallback, quality guidance, reason codes, confidence display, document preview, and reason-required final decisions.
+- FastAPI versioned image-quality and face-evidence endpoints. Selfie image quality is **not** liveness or anti-spoofing; low face similarity is routed to manual review.
+- Node, MongoDB integration/concurrency, Python, and frontend checks. Browser automation and production threshold calibration remain future work.
 
-See [the MVP scope](docs/PHASE_0_MVP.md) for the exact showcase journey and acceptance criteria, [the Phase 2 plan](docs/superpowers/plans/2026-09-17-phase-2-workflow-reliability.md) for workflow-reliability work, and [the original architecture document](docs/architecture-design.docx) for the broader product vision. The architecture document is a design reference; the MVP scope takes precedence when they differ.
+See [the MVP scope](docs/PHASE_0_MVP.md), [the Phase 2 plan](docs/superpowers/plans/2026-09-17-phase-2-workflow-reliability.md), [the Phase 3 plan](docs/superpowers/plans/2026-09-23-phase-3-verification-pipeline.md), and [the pipeline model card](docs/verification/model-card.md). The original [architecture document](docs/architecture-design.docx) is a broad design reference; implemented scope and limitations take precedence.
 
 ## Repository layout
 
@@ -57,7 +58,7 @@ node server.js
 
 The API listens on `http://localhost:3000` by default; `GET /api/health` is the basic health check. Do not commit `.env`, uploaded identity files, or real applicant data.
 
-The example environment file documents the required settings. `MONGO_URI`, `JWT_SECRET`, and the Google mail variables need local values; the example is not a usable credential set. The current frontend API URL is hardcoded to `http://localhost:3000/api`.
+The example environment file documents the required settings. `MONGO_URI`, `JWT_SECRET`, `VERIFICATION_RESULT_DIGEST_KEY`, and the Google mail variables need local values; the example is not a usable credential set. Use an independent high-entropy digest key because it protects equality digests for masked identity fields. The current frontend API URL is hardcoded to `http://localhost:3000/api`.
 
 ### Frontend
 
@@ -67,9 +68,9 @@ npm ci
 npm run dev
 ```
 
-Vite serves the UI on `http://localhost:5173` by default. The frontend is a partial implementation of the intended interface, not a complete demo journey.
+Vite serves the UI on `http://localhost:5173` by default. Camera capture requires browser permission and a secure context (localhost qualifies in modern browsers); a file-input fallback is available.
 
-### ML service (experimental)
+### ML service
 
 ```bash
 cd ML-Service
@@ -79,7 +80,7 @@ python -m pip install -r requirements.txt
 uvicorn app:app --reload --port 8000
 ```
 
-The backend uses `ML_SERVICE_URL` (default `http://localhost:8000`). Face models may download on first run. The Python dependency set and model behavior have **not** yet been validated as a clean-install release; see [the RAG notes](ML-Service/RAG/README.md) for its additional index and Ollama setup.
+The backend uses `ML_SERVICE_URL` (default `http://localhost:8000`). Face models may download on first run and InsightFace/ONNX support is platform-sensitive. Scores use engineering defaults and are not production-calibrated; review the [model card](docs/verification/model-card.md). The optional RAG extension has separate index and Ollama setup in [its notes](ML-Service/RAG/README.md).
 
 ## Checks
 
@@ -96,6 +97,14 @@ node --test src/pages/dashboard/requestStatus.test.js
 ```
 
 Backend integration tests use `mongodb-memory-server`, so their first run may download a MongoDB binary. The frontend has a small status-unit test but no browser-level end-to-end suite yet.
+
+```bash
+cd ML-Service
+python -m pytest -q
+python -m calibration.evaluate_thresholds calibration/fixtures.example.json
+```
+
+The calibration fixture is synthetic and only demonstrates the report format. It is not an accuracy claim.
 
 ## Workflow data safety
 

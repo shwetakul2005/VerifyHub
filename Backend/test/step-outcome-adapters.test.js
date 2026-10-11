@@ -107,7 +107,7 @@ test("face adapter returns completed or non-retryable failed outcomes without ad
 test("face adapter runs the versioned pipeline and preserves manual review decisions", async () => {
     const context = {
         request: { _id: "request" },
-        execution: { _id: "execution", attempt: 1, metadata: { liveFilePath: "selfie.png", liveMimeType: "image/png" } }
+        execution: { _id: "execution", attempt: 1, metadata: { selfieFilePath: "selfie.png", selfieMimeType: "image/png" } }
     };
     let received;
     const outcome = await faceAdapter.execute(context, {
